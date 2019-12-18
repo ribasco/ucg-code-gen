@@ -1,5 +1,8 @@
 package com.ibasco.ucgdisplay.tools;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import com.ibasco.ucgdisplay.drivers.glcd.GlcdDisplay;
 import com.ibasco.ucgdisplay.drivers.glcd.GlcdSetupInfo;
 import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdBufferType;
@@ -14,7 +17,9 @@ import org.slf4j.LoggerFactory;
 
 import javax.lang.model.element.Modifier;
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.nio.file.Paths;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -30,6 +35,8 @@ public class CodeGenerator {
 
     private String lastFontBranch;
 
+    private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
+
     private boolean includeComments;
 
     public boolean isIncludeComments() {
@@ -38,6 +45,13 @@ public class CodeGenerator {
 
     public void setIncludeComments(boolean includeComments) {
         this.includeComments = includeComments;
+    }
+
+    public String buildControllerManifest(List<Controller> controllers) {
+        Manifest manifest = new Manifest();
+        manifest.setControllers(controllers);
+        manifest.setLastUpdated(ZonedDateTime.now());
+        return gson.toJson(manifest, Manifest.class);
     }
 
     public JavaFile generateGlcdCode(List<Controller> controllers) {

@@ -1,6 +1,7 @@
 package com.ibasco.ucgdisplay.tools;
 
 import com.ibasco.ucgdisplay.tools.beans.Controller;
+import com.ibasco.ucgdisplay.tools.beans.Manifest;
 import com.squareup.javapoet.JavaFile;
 import org.apache.commons.cli.*;
 import org.slf4j.Logger;
@@ -12,6 +13,7 @@ import java.io.InputStream;
 import java.net.URL;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
@@ -198,6 +200,10 @@ public class Application {
             exportToProject(tmpGlcdFontEnumPath, exportPathGlcdFont);
             exportToProject(tmpU8g2LookupFontPath, exportPathU8g2LookupFontPath);
             exportToProject(tmpU8g2LookupSetupPath, exportPathU8g2LookupSetupPath);
+
+            //Create manifest
+            String manifestJson = generator.buildControllerManifest(controllers);
+            exportCodeToFile(Paths.get("./controllers.json"), manifestJson);
         } finally {
             //Cleanup
             recursiveDeleteOnExit(tempDirWithPrefix);
@@ -211,7 +217,7 @@ public class Application {
 
     private void exportCodeToFile(Path filePath, String code) throws IOException {
         Files.writeString(filePath, code);
-        log.info("File(s) saved to temp directory \"{}\"", filePath.toString());
+        log.info("File(s) saved to \"{}\"", filePath.toString());
     }
 
     public static void recursiveDeleteOnExit(Path path) throws IOException {

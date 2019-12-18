@@ -11,7 +11,7 @@ public class VendorConfig {
 
     private static final Logger log = LoggerFactory.getLogger(VendorConfig.class);
 
-    private Vendor vendor;
+    private transient Vendor vendor;
 
     private String cadName;
 

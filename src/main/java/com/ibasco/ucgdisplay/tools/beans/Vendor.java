@@ -6,7 +6,7 @@ import java.util.Set;
 
 public class Vendor {
 
-    private Controller controller;
+    private transient Controller controller;
 
     private String name;
 
