@@ -18,7 +18,10 @@ import org.slf4j.LoggerFactory;
 import javax.lang.model.element.Modifier;
 import java.io.IOException;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -51,7 +54,32 @@ public class CodeGenerator {
         Manifest manifest = new Manifest();
         manifest.setControllers(controllers);
         manifest.setLastUpdated(ZonedDateTime.now());
+        manifest.setMd5Hash(getMD5ControllersHash(controllers));
         return gson.toJson(manifest, Manifest.class);
+    }
+
+    public String getMD5ControllersHash(List<Controller> controllers) {
+        try {
+            // MessageDigest instance for MD5
+            MessageDigest md = MessageDigest.getInstance("MD5");
+
+            Type colType = new TypeToken<List<Controller>>() {}.getType();
+
+            // Update MessageDigest with input text in bytes
+            md.update(gson.toJson(controllers, colType).getBytes());
+
+            // Get the hashbytes
+            byte[] hashBytes = md.digest();
+
+            //Convert hash bytes to hex format
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hashBytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     public JavaFile generateGlcdCode(List<Controller> controllers) {
