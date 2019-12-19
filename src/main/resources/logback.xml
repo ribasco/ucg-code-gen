@@ -11,6 +11,5 @@
         <appender-ref ref="CONSOLE"/>
     </root>
 
-    <logger name="ch.qos.logback.classic" level="error" />
     <logger name="com.ibasco.ucgdisplay.tools" level="info"/>
 </configuration>

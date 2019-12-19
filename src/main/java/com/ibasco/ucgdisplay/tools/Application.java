@@ -170,6 +170,7 @@ public class Application {
             Path tmpU8g2LookupFontPath = Paths.get(tempDirWithPrefix.toString(), "U8g2LookupFonts.cpp");
             Path tmpU8g2LookupSetupPath = Paths.get(tempDirWithPrefix.toString(), "U8g2LookupSetup.cpp");
             Path tmpU8g2CmakeFilePath = Paths.get(tempDirWithPrefix.toString(), "u8g2.cmake");
+            Path tmpControllerManifest = Paths.get(tempDirWithPrefix.toString(), "controllers.json");
 
             exportCodeToFile(tmpGlcdPath, glcdFile.toString());
             exportCodeToFile(tmpGlcdControllerTypePath, glcdControllerTypes.toString());
@@ -189,6 +190,7 @@ public class Application {
             Path exportPathU8g2LookupFontPath = Paths.get(projectPath.toString(), "native/modules/graphics/src/main/cpp/U8g2LookupFonts.cpp");
             Path exportPathU8g2LookupSetupPath = Paths.get(projectPath.toString(), "native/modules/graphics/src/main/cpp/U8g2LookupSetup.cpp");
             Path exportPathU8g2CmakeFilePath = Paths.get(projectPath.toString(), "native/cmake/external/u8g2.cmake");
+            Path exportPathManifest = Paths.get(projectPath.toString(), "docs/controllers.json");
 
             //Copy to project path
             exportToDest(tmpGlcdPath, exportPathGlcd);
@@ -200,10 +202,10 @@ public class Application {
             exportToDest(tmpU8g2CmakeFilePath, exportPathU8g2CmakeFilePath);
 
             //Create manifest
-            Path manifestPath = Paths.get("./controllers.json");
-            log.debug("Creating manifest file at '{}'", manifestPath);
+            log.debug("Creating manifest file at '{}'", tmpControllerManifest);
             String manifestJson = generator.generateManifest(controllers);
-            exportCodeToFile(manifestPath, manifestJson);
+            exportCodeToFile(tmpControllerManifest, manifestJson);
+            exportToDest(tmpControllerManifest, exportPathManifest);
         } finally {
             log.debug("Cleaning up resources");
             //Cleanup
