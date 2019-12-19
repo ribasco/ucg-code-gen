@@ -30,7 +30,7 @@ public class Controller implements Comparable<Controller> {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Controller that = (Controller) o;
-        return name.equals(that.name);
+        return name.equalsIgnoreCase(that.name);
     }
 
     @Override

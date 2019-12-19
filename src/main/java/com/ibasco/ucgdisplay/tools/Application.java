@@ -1,19 +1,18 @@
 package com.ibasco.ucgdisplay.tools;
 
 import com.ibasco.ucgdisplay.tools.beans.Controller;
-import com.ibasco.ucgdisplay.tools.beans.Manifest;
 import com.squareup.javapoet.JavaFile;
 import org.apache.commons.cli.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
@@ -41,9 +40,9 @@ public class Application {
 
     private static final Logger log = LoggerFactory.getLogger(Application.class);
 
-    private Extractor extractor = new Extractor();
+    private CodeExtractor extractor = new CodeExtractor();
 
-    private Parser parser = new Parser();
+    private CodeParser parser = new CodeParser();
 
     private final Options options = new Options();
 
@@ -57,6 +56,8 @@ public class Application {
 
     private Path fontExclusionFilePath;
 
+    private Path controllerExclusionFilePath;
+
     private boolean includeComments;
 
     private String branchName;
@@ -64,8 +65,6 @@ public class Application {
     private boolean testMode = false;
 
     private URL testResource;
-
-    private InputStream fontExclusions;
 
     private Application() {
         options.addRequiredOption("p", "path", true, "The base project path where all the files will be automatically exported");
@@ -135,26 +134,20 @@ public class Application {
         CodeGenerator generator = new CodeGenerator();
         generator.setIncludeComments(includeComments);
 
-        List<String> excludedFonts = new ArrayList<>();
-        if (fontExclusionFilePath == null) {
-            fontExclusions = getClass().getResourceAsStream("/excludedFonts.properties");
-        } else {
-            fontExclusions = new FileInputStream(fontExclusionFilePath.toFile());
-        }
+        //Retrieve exclusions
+        List<String> excludedFonts = getExclusions(fontExclusionFilePath, "/excludedFonts.properties");
+        List<String> excludedControllers = getExclusions(controllerExclusionFilePath, "/excludedControllers.properties");
 
-        Scanner scanner = new Scanner(fontExclusions);
-        while (scanner.hasNextLine()) {
-            String line = scanner.nextLine();
-            excludedFonts.add(line);
-        }
         log.debug("Added {} font exclusions", excludedFonts.size());
+        log.debug("Added {} controller exclusions", excludedControllers.size());
 
-        final JavaFile glcdFile = generator.generateGlcdCode(controllers);
+        final JavaFile glcdFile = generator.generateGlcdCode(controllers, excludedControllers);
         final JavaFile glcdControllerTypes = generator.generateControllerTypeEnum(controllers);
         final JavaFile glcdSize = generator.generateGlcdSizeEnum(controllers);
         final JavaFile glcdFontEnum = generator.generateGlcdFontEnum(branchName, excludedFonts);
         final String fontCppCode = generator.generateFontLookupTableCpp(branchName, excludedFonts);
-        final String setupCppCode = generator.generateSetupLookupTableCpp(controllers);
+        final String setupCppCode = generator.generateSetupLookupTableCpp(controllers, excludedControllers);
+        final String u8g2CmakeFile = generator.generateU8g2CmakeFile(branchName);
 
         log.debug(glcdFile.toString());
         log.debug(glcdControllerTypes.toString());
@@ -162,6 +155,7 @@ public class Application {
         log.debug(glcdFontEnum.toString());
         log.debug(fontCppCode);
         log.debug(setupCppCode);
+        log.debug(u8g2CmakeFile);
 
         //Create temp directory
         Path tempDirWithPrefix = Files.createTempDirectory("ucg-code-gen-");
@@ -175,6 +169,7 @@ public class Application {
             Path tmpGlcdFontEnumPath = Paths.get(tempDirWithPrefix.toString(), "GlcdFont.java");
             Path tmpU8g2LookupFontPath = Paths.get(tempDirWithPrefix.toString(), "U8g2LookupFonts.cpp");
             Path tmpU8g2LookupSetupPath = Paths.get(tempDirWithPrefix.toString(), "U8g2LookupSetup.cpp");
+            Path tmpU8g2CmakeFilePath = Paths.get(tempDirWithPrefix.toString(), "u8g2.cmake");
 
             exportCodeToFile(tmpGlcdPath, glcdFile.toString());
             exportCodeToFile(tmpGlcdControllerTypePath, glcdControllerTypes.toString());
@@ -182,6 +177,7 @@ public class Application {
             exportCodeToFile(tmpGlcdFontEnumPath, glcdFontEnum.toString());
             exportCodeToFile(tmpU8g2LookupFontPath, fontCppCode);
             exportCodeToFile(tmpU8g2LookupSetupPath, setupCppCode);
+            exportCodeToFile(tmpU8g2CmakeFilePath, u8g2CmakeFile);
 
             if (!Files.isDirectory(projectPath))
                 throw new IllegalStateException("Project path is invalid: " + projectPath);
@@ -192,27 +188,63 @@ public class Application {
             Path exportPathGlcdControllerType = Paths.get(projectPath.toString(), "drivers/glcd/src/main/java/com/ibasco/ucgdisplay/drivers/glcd/enums/GlcdControllerType.java");
             Path exportPathU8g2LookupFontPath = Paths.get(projectPath.toString(), "native/modules/graphics/src/main/cpp/U8g2LookupFonts.cpp");
             Path exportPathU8g2LookupSetupPath = Paths.get(projectPath.toString(), "native/modules/graphics/src/main/cpp/U8g2LookupSetup.cpp");
+            Path exportPathU8g2CmakeFilePath = Paths.get(projectPath.toString(), "native/cmake/external/u8g2.cmake");
 
             //Copy to project path
-            exportToProject(tmpGlcdPath, exportPathGlcd);
-            exportToProject(tmpGlcdControllerTypePath, exportPathGlcdControllerType);
-            exportToProject(tmpGlcdSizePath, exportPathGlcdSize);
-            exportToProject(tmpGlcdFontEnumPath, exportPathGlcdFont);
-            exportToProject(tmpU8g2LookupFontPath, exportPathU8g2LookupFontPath);
-            exportToProject(tmpU8g2LookupSetupPath, exportPathU8g2LookupSetupPath);
+            exportToDest(tmpGlcdPath, exportPathGlcd);
+            exportToDest(tmpGlcdControllerTypePath, exportPathGlcdControllerType);
+            exportToDest(tmpGlcdSizePath, exportPathGlcdSize);
+            exportToDest(tmpGlcdFontEnumPath, exportPathGlcdFont);
+            exportToDest(tmpU8g2LookupFontPath, exportPathU8g2LookupFontPath);
+            exportToDest(tmpU8g2LookupSetupPath, exportPathU8g2LookupSetupPath);
+            exportToDest(tmpU8g2CmakeFilePath, exportPathU8g2CmakeFilePath);
 
             //Create manifest
-            String manifestJson = generator.buildControllerManifest(controllers);
-            exportCodeToFile(Paths.get("./controllers.json"), manifestJson);
+            Path manifestPath = Paths.get("./controllers.json");
+            log.debug("Creating manifest file at '{}'", manifestPath);
+            String manifestJson = generator.generateManifest(controllers);
+            exportCodeToFile(manifestPath, manifestJson);
         } finally {
+            log.debug("Cleaning up resources");
             //Cleanup
             recursiveDeleteOnExit(tempDirWithPrefix);
         }
     }
 
-    private void exportToProject(Path source, Path dest) throws IOException {
-        Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING);
-        log.info("File \"{}\" exported to project path \"{}\"", source.getFileName(), dest.toString());
+    private List<String> getExclusions(Path path, String defaultResource) throws FileNotFoundException {
+        ArrayList<String> output = new ArrayList<>();
+        InputStream fontExclusions;
+        if (path == null) {
+            fontExclusions = getClass().getResourceAsStream(defaultResource);
+        } else {
+            fontExclusions = new FileInputStream(fontExclusionFilePath.toFile());
+        }
+        processResourceStream(fontExclusions, output);
+        return output;
+    }
+
+    private void processResourceStream(InputStream is, List<String> output) {
+        try (Scanner scanner = new Scanner(is)) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine();
+                output.add(line);
+            }
+        }
+    }
+
+    private void exportToDest(Path source, Path dest) throws IOException {
+        if (testMode) {
+            if (!Files.isWritable(dest))
+                throw new IllegalStateException(String.format("File '%s' will not be able to replace '%s'. No write permission", source, dest));
+            if (Files.exists(dest)) {
+                log.info("[TEST] File '{}' will be able to replace '{}'", source, dest);
+            } else {
+                log.info("[TEST] File '{}' will be copied directly to '{}'", source, dest);
+            }
+        } else {
+            Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING);
+            log.info("File \"{}\" exported to project path \"{}\"", source.getFileName(), dest.toString());
+        }
     }
 
     private void exportCodeToFile(Path filePath, String code) throws IOException {

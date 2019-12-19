@@ -1,4 +1,4 @@
-package com.ibasco.ucgdisplay.tools;
+package com.ibasco.ucgdisplay.tools.util;
 
 import com.ibasco.ucgdisplay.tools.beans.Vendor;
 import com.ibasco.ucgdisplay.tools.beans.VendorConfig;
@@ -50,6 +50,11 @@ public class StringUtils {
     }
 
     public static String formatVendorName(Vendor vendor) {
-        return String.format("D_%dx%d_%s", vendor.getTileWidth() * 8, vendor.getTileHeight() * 8, vendor.getName().replaceAll("_", ""));
+        String sizeString = String.format("%dx%d", vendor.getTileWidth() * 8, vendor.getTileHeight() * 8);
+        String vendorName = vendor.getName().replaceAll("_", "");
+        if (sizeString.equalsIgnoreCase(vendor.getName())) {
+            return String.format("D_%s", sizeString);
+        }
+        return String.format("D_%s_%s", sizeString, vendorName);
     }
 }

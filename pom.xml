@@ -12,6 +12,7 @@
         <revision>1.0.0-SNAPSHOT</revision>
         <maven.compiler.source>13</maven.compiler.source>
         <maven.compiler.target>13</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
     <build>
         <plugins>
@@ -27,15 +28,11 @@
                         </goals>
                         <configuration>
                             <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>com.ibasco.ucgdisplay.tools.Application</mainClass>
                                 </transformer>
                             </transformers>
-                            <!--<artifactSet>
-                                <excludes>
-                                    <exclude>com.ibasco.ucgdisplay:ucgd-*</exclude>
-                                </excludes>
-                            </artifactSet>-->
                         </configuration>
                     </execution>
                 </executions>
@@ -43,18 +40,23 @@
                     <finalName>ucgd-codegen</finalName>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.8.1</version>
+            </plugin>
         </plugins>
     </build>
     <dependencies>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>2.0.0-alpha0</version>
+            <version>1.7.28</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.3.0-alpha4</version>
+            <version>1.2.3</version>
         </dependency>
         <dependency>
             <groupId>com.squareup</groupId>
@@ -72,12 +74,6 @@
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>2.8.6</version>
-        </dependency>
-        <dependency>
-            <groupId>com.ibasco.ucgdisplay</groupId>
-            <artifactId>ucgd-drivers-glcd</artifactId>
-            <version>1.5.2-alpha</version>
-            <scope>compile</scope>
         </dependency>
     </dependencies>
 </project>

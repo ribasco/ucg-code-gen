@@ -1,8 +1,6 @@
 package com.ibasco.ucgdisplay.tools.beans;
 
-import java.util.HashSet;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 public class Vendor {
 
@@ -18,7 +16,7 @@ public class Vendor {
 
     private String notes;
 
-    private Set<VendorConfig> vendorConfigs = new HashSet<>();
+    private List<VendorConfig> vendorConfigs = new ArrayList<>();
 
     public Vendor(Controller controller, String name) {
         this.controller = controller;
@@ -73,7 +71,7 @@ public class Vendor {
         this.bufferLayout = bufferLayout;
     }
 
-    public Set<VendorConfig> getVendorConfigs() {
+    public List<VendorConfig> getVendorConfigs() {
         return vendorConfigs;
     }
 

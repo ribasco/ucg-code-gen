@@ -1,6 +1,6 @@
 package com.ibasco.ucgdisplay.tools;
 
-import static com.ibasco.ucgdisplay.tools.StringUtils.isBlank;
+import static com.ibasco.ucgdisplay.tools.util.StringUtils.isBlank;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,9 +10,9 @@ import java.net.URL;
 import java.time.format.DateTimeFormatter;
 import java.util.Scanner;
 
-public class Extractor {
+public class CodeExtractor {
 
-    private static final Logger log = LoggerFactory.getLogger(Extractor.class);
+    private static final Logger log = LoggerFactory.getLogger(CodeExtractor.class);
 
     private static final String START_TAG = "display_controller_list_start";
 

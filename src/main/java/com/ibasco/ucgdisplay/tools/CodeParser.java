@@ -1,6 +1,7 @@
 package com.ibasco.ucgdisplay.tools;
 
-import static com.ibasco.ucgdisplay.tools.StringUtils.sanitizeData;
+import static com.ibasco.ucgdisplay.tools.util.StringUtils.sanitizeData;
+
 import com.ibasco.ucgdisplay.tools.beans.Comm;
 import com.ibasco.ucgdisplay.tools.beans.Controller;
 import com.ibasco.ucgdisplay.tools.beans.Vendor;
@@ -13,9 +14,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-public class Parser {
+/**
+ * Parses the u8g2 codebuild.c file
+ *
+ * @author Rafael Ibasco
+ * @see <a href="https://github.com/olikraus/u8g2/blob/master/tools/codebuild/codebuild.c">codebuild.c</a>
+ */
+public class CodeParser {
 
-    private static final Logger log = LoggerFactory.getLogger(Parser.class);
+    private static final Logger log = LoggerFactory.getLogger(CodeParser.class);
 
     private static final Pattern PATTERN_EXTRACT_CONTROLLERS = Pattern.compile("struct\\s+controller\\s+controller\\_list\\[\\].+\\n\\{(?<controllers>(?s:.)+)\\}\\;");
 
@@ -89,20 +96,11 @@ public class Parser {
         return result;
     }
 
-    private List<Comm> parseCommInterfaces(String commCode) {
-        ArrayList<Comm> interfaces = new ArrayList<>();
-        return new ArrayList<>();
-    }
-
     private Vendor extractVendor(Controller controller, String vendorName) {
         return controller.getVendorList().stream()
                 .filter(p -> p.getName().equalsIgnoreCase(vendorName))
                 .findFirst()
                 .orElse(null);
-    }
-
-    private List<String> getSupportModes(Controller controller) {
-        return null;
     }
 
     private String parseVendorName(String displayCode) {

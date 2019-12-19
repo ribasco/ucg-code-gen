@@ -7,10 +7,11 @@ import com.ibasco.ucgdisplay.drivers.glcd.GlcdDisplay;
 import com.ibasco.ucgdisplay.drivers.glcd.GlcdSetupInfo;
 import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdBufferType;
 import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdControllerType;
-import static com.ibasco.ucgdisplay.tools.StringUtils.formatVendorName;
+import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdSize;
 import com.ibasco.ucgdisplay.tools.beans.*;
 import com.ibasco.ucgdisplay.tools.service.GithubService;
 import com.ibasco.ucgdisplay.tools.util.CodeBuilder;
+import com.ibasco.ucgdisplay.tools.util.StringUtils;
 import com.squareup.javapoet.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,16 +19,23 @@ import org.slf4j.LoggerFactory;
 import javax.lang.model.element.Modifier;
 import java.io.IOException;
 import java.lang.reflect.Type;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static com.ibasco.ucgdisplay.tools.util.StringUtils.formatVendorName;
+
+/**
+ * Generates java and c++ code for ucgdisplay
+ *
+ * @author Rafael Ibasco
+ */
 public class CodeGenerator {
 
     private static final Logger log = LoggerFactory.getLogger(CodeGenerator.class);
@@ -36,11 +44,17 @@ public class CodeGenerator {
 
     private List<String> fontCache = new ArrayList<>();
 
+    private List<String> u8g2FileCache = new ArrayList<>();
+
     private String lastFontBranch;
+
+    private String lastU8g2Branch;
 
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
     private boolean includeComments;
+
+    private DateTimeFormatter dateTimeFormatter = DateTimeFormatter.RFC_1123_DATE_TIME;
 
     public boolean isIncludeComments() {
         return includeComments;
@@ -50,20 +64,21 @@ public class CodeGenerator {
         this.includeComments = includeComments;
     }
 
-    public String buildControllerManifest(List<Controller> controllers) {
+    public String generateManifest(List<Controller> controllers) {
         Manifest manifest = new Manifest();
         manifest.setControllers(controllers);
         manifest.setLastUpdated(ZonedDateTime.now());
-        manifest.setMd5Hash(getMD5ControllersHash(controllers));
+        manifest.setMd5Hash(generateMD5Hash(controllers));
         return gson.toJson(manifest, Manifest.class);
     }
 
-    public String getMD5ControllersHash(List<Controller> controllers) {
+    public String generateMD5Hash(List<Controller> controllers) {
         try {
             // MessageDigest instance for MD5
             MessageDigest md = MessageDigest.getInstance("MD5");
 
-            Type colType = new TypeToken<List<Controller>>() {}.getType();
+            Type colType = new TypeToken<List<Controller>>() {
+            }.getType();
 
             // Update MessageDigest with input text in bytes
             md.update(gson.toJson(controllers, colType).getBytes());
@@ -82,14 +97,34 @@ public class CodeGenerator {
         }
     }
 
-    public JavaFile generateGlcdCode(List<Controller> controllers) {
+    private boolean isExcluded(Controller controller, List<String> excludedControllers) {
+        return excludedControllers.stream().anyMatch(p -> p.equalsIgnoreCase(controller.getName().trim()));
+    }
+
+    public JavaFile generateGlcdCode(List<Controller> controllers, List<String> excludedControllers) {
         TypeSpec.Builder glcdInterfaceBuilder = TypeSpec.interfaceBuilder("Glcd").addModifiers(Modifier.PUBLIC);
+        glcdInterfaceBuilder.addAnnotation(AnnotationSpec.builder(SuppressWarnings.class).addMember("value", "\"unused\"").build());
 
         for (Controller controller : controllers) {
+            if (isExcluded(controller, excludedControllers)) {
+                log.warn("generateGlcdCode() : Excluded controller: {}", controller.getName());
+                continue;
+            }
             TypeSpec.Builder controllerSpecBuilder = TypeSpec.interfaceBuilder(controller.getName()).addModifiers(Modifier.STATIC, Modifier.PUBLIC);
+            controllerSpecBuilder.addJavadoc("Display Controller: $L\n", controller.getName());
             for (Vendor vendor : controller.getVendorList()) {
                 String vendorName = formatVendorName(vendor);
-                FieldSpec.Builder displayFieldBuilder = FieldSpec.builder(ClassName.bestGuess("GlcdDisplay"), vendorName, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL);
+
+                FieldSpec.Builder displayFieldBuilder = FieldSpec.builder(GlcdDisplay.class, vendorName, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL);
+                displayFieldBuilder.addJavadoc("<p>\nDisplay Name:\n    $L :: $L\n</p>\n<p>\nDisplay Width:\n    $L pixels\n</p>\n<p>\nDisplay height:\n    $L pixels\n</p>\nSupported Bus Interfaces: \n<ul>$L</ul>\n<p>\nNotes from author:\n    $L\n</p>\n",
+                        controller.getName(),
+                        vendor.getName(),
+                        vendor.getTileWidth() * 8,
+                        vendor.getTileHeight() * 8,
+                        getSupportedBusInterfaces(vendor),
+                        !StringUtils.isBlank(vendor.getNotes()) ? vendor.getNotes() : "N/A"
+                );
+
                 String bufferLayout;
                 if ("u8g2_ll_hvline_horizontal_right_lsb".equalsIgnoreCase(vendor.getBufferLayout())) {
                     bufferLayout = "HORIZONTAL";
@@ -98,6 +133,7 @@ public class CodeGenerator {
                 } else {
                     bufferLayout = "UNKNOWN";
                 }
+
                 CodeBlock.Builder displayCodeBlockBuilder = CodeBlock.builder()
                         .add("new $T(", GlcdDisplay.class)
                         .add("\n    $T.$L,", GlcdControllerType.class, controller.getName())
@@ -105,11 +141,16 @@ public class CodeGenerator {
                         .add("\n    ").add("$L,", vendor.getTileWidth())
                         .add("\n    ").add("$L,", vendor.getTileHeight())
                         .add("\n    ").add("$T.$L,", GlcdBufferType.class, bufferLayout);
+
                 CodeBlock.Builder setupCodeBlock = CodeBlock.builder();
-                for (VendorConfig config : vendor.getVendorConfigs()) {
-                    String commInts = config.getSupportedInterfaces().stream().map(Comm::getName).collect(Collectors.joining(" | "));
-                    setupCodeBlock.add("\n    new $T($S, $L)", GlcdSetupInfo.class, StringUtils.toU8g2SetupName(config), commInts);
+
+                int configSize = vendor.getVendorConfigs().size();
+                for (int i = 0; i < configSize; i++) {
+                    VendorConfig config = vendor.getVendorConfigs().get(i);
+                    String commInts = config.getSupportedInterfaces().stream().map(Comm::getName).distinct().collect(Collectors.joining(" | "));
+                    setupCodeBlock.add("\n    new $T($S, $L)$L", GlcdSetupInfo.class, StringUtils.toU8g2SetupName(config), commInts, (configSize > 1 && i < (configSize - 1)) ? "," : "");
                 }
+
                 displayCodeBlockBuilder.add(setupCodeBlock.add("\n)").build());
                 displayFieldBuilder.initializer(displayCodeBlockBuilder.build());
                 controllerSpecBuilder.addField(displayFieldBuilder.build());
@@ -119,8 +160,9 @@ public class CodeGenerator {
         }
 
         JavaFile.Builder javaBuilder = JavaFile.builder("com.ibasco.ucgdisplay.drivers.glcd", glcdInterfaceBuilder.build());
-        /*javaBuilder.addStaticImport(ClassName.bestGuess("com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdBufferType"), "GlcdBufferType");
-        javaBuilder.addStaticImport(ClassName.bestGuess("com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdControllerType"), "GlcdControllerType");*/
+
+        if (includeComments)
+            javaBuilder.addFileComment(generateFileComment(false));
         javaBuilder.addStaticImport(ClassName.bestGuess("com.ibasco.ucgdisplay.core.u8g2.U8g2Graphics"), "*");
         return javaBuilder.build();
     }
@@ -130,11 +172,21 @@ public class CodeGenerator {
         for (Controller controller : controllers)
             enumSpec.addEnumConstant(controller.getName());
         JavaFile.Builder javaBuilder = JavaFile.builder("com.ibasco.ucgdisplay.drivers.glcd.enums", enumSpec.build());
+        if (includeComments)
+            javaBuilder.addFileComment(generateFileComment(false));
         return javaBuilder.build();
     }
 
     public JavaFile generateGlcdSizeEnum(List<Controller> controllers) {
         TypeSpec.Builder enumSpec = TypeSpec.enumBuilder("GlcdSize").addModifiers(Modifier.PUBLIC);
+        enumSpec.addMethod(
+                MethodSpec.constructorBuilder()
+                        .addParameter(TypeName.INT, "tileWidth")
+                        .addParameter(TypeName.INT, "tileHeight")
+                        .addStatement("this.tileWidth = tileWidth")
+                        .addStatement("this.tileHeight = tileHeight")
+                        .build()
+        );
         enumSpec.addField(TypeName.INT, "tileWidth", Modifier.PRIVATE);
         enumSpec.addField(TypeName.INT, "tileHeight", Modifier.PRIVATE);
         enumSpec.addMethod(
@@ -160,19 +212,20 @@ public class CodeGenerator {
         );
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("getTileHeight")
-                        .addStatement("return tileWidth", Modifier.PUBLIC)
+                        .addStatement("return tileHeight", Modifier.PUBLIC)
                         .addModifiers(Modifier.PUBLIC)
                         .returns(TypeName.INT)
                         .build()
         );
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("get")
+                        .returns(GlcdSize.class)
                         .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                         .addParameter(TypeName.INT, "tileWidth")
                         .addParameter(TypeName.INT, "tileHeight")
                         .addStatement("return $T.stream(GlcdSize.values())\n" +
-                                              "                .filter(p -> (p.getTileWidth() == tileWidth) && (p.getTileHeight() == tileHeight))\n" +
-                                              "                .findFirst().orElse(null)", Arrays.class)
+                                "                .filter(p -> (p.getTileWidth() == tileWidth) && (p.getTileHeight() == tileHeight))\n" +
+                                "                .findFirst().orElse(null)", Arrays.class)
                         .build()
         );
         for (Controller controller : controllers) {
@@ -183,6 +236,8 @@ public class CodeGenerator {
             }
         }
         JavaFile.Builder javaBuilder = JavaFile.builder("com.ibasco.ucgdisplay.drivers.glcd.enums", enumSpec.build());
+        if (includeComments)
+            javaBuilder.addFileComment(generateFileComment(false));
         return javaBuilder.build();
     }
 
@@ -191,13 +246,14 @@ public class CodeGenerator {
 
         enumSpec.addField(String.class, "fontKey", Modifier.PRIVATE);
         enumSpec.addMethod(MethodSpec.constructorBuilder()
-                                   .addParameter(TypeName.get(String.class), "GlcdFont")
-                                   .addStatement("this.fontKey = fontKey")
-                                   .build())
+                .addParameter(TypeName.get(String.class), "fontKey")
+                .addStatement("this.fontKey = fontKey")
+                .build())
         ;
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("getKey")
                         .addModifiers(Modifier.PUBLIC)
+                        .returns(String.class)
                         .addStatement("return fontKey")
                         .build()
         );
@@ -217,12 +273,16 @@ public class CodeGenerator {
             enumSpec.addEnumConstant(name, TypeSpec.anonymousClassBuilder("$S", fontKey).build());
         }
         JavaFile.Builder javaBuilder = JavaFile.builder("com.ibasco.ucgdisplay.drivers.glcd.enums", enumSpec.build());
+        if (includeComments)
+            javaBuilder.addFileComment(generateFileComment(false));
         return javaBuilder.build();
     }
 
     public String generateFontLookupTableCpp(String branch, List<String> exclusions) {
         CodeBuilder code = new CodeBuilder();
         code.setUseUnixStyleSeparator(true);
+        if (includeComments)
+            code.appendLine(generateFileComment(true));
 
         List<String> fonts = fetchFontsFromLatestBranch(branch);
 
@@ -243,9 +303,11 @@ public class CodeGenerator {
         return code.toString();
     }
 
-    public String generateSetupLookupTableCpp(List<Controller> controllers) {
+    public String generateSetupLookupTableCpp(List<Controller> controllers, List<String> excludedControllers) {
         CodeBuilder code = new CodeBuilder();
         code.setUseUnixStyleSeparator(true);
+        if (includeComments)
+            code.appendLine(generateFileComment(true));
 
         code.appendLine("#include \"U8g2Hal.h\"");
         code.appendMultiLine("#include <iostream>", 2);
@@ -253,6 +315,10 @@ public class CodeGenerator {
         code.appendLine("void U8g2hal_InitSetupFunctions(u8g2_setup_func_map_t &setup_map) {");
         code.appendTabbedLine("setup_map.clear();");
         for (Controller controller : controllers) {
+            if (isExcluded(controller, excludedControllers)) {
+                log.warn("generateSetupLookupTableCpp(): Excluded controller: {}", controller.getName());
+                continue;
+            }
             for (Vendor vendor : controller.getVendorList()) {
                 for (VendorConfig config : vendor.getVendorConfigs()) {
                     String name = StringUtils.toU8g2SetupName(config);
@@ -262,6 +328,123 @@ public class CodeGenerator {
         }
         code.append("}");
         return code.toString();
+    }
+
+    public String generateU8g2CmakeFile(String branch) {
+        CodeBuilder code = new CodeBuilder();
+        code.setUseUnixStyleSeparator(true);
+
+        if (includeComments) {
+            code.appendLine(generateFileComment(true, "#"));
+            code.appendLine();
+        }
+
+        code.appendLine("include(ExternalProject)");
+        code.appendLine();
+        code.appendLine("set(PROJ_PREFIX \"u8g2\")");
+        code.appendLine();
+
+        code.appendLine("#1: https://github.com/olikraus/u8g2.git");
+        code.appendLine("#2: /home/raffy/projects/u8g2.git");
+        code.appendLine();
+
+        code.appendLine("ExternalProject_Add(\n" +
+                "        project_u8g2\n" +
+                "        GIT_REPOSITORY \"https://github.com/olikraus/u8g2.git\"\n" +
+                "        GIT_TAG \"master\"\n" +
+                "        PREFIX ${PROJ_PREFIX}\n" +
+                "        INSTALL_COMMAND \"\"\n" +
+                "        CONFIGURE_COMMAND \"\"\n" +
+                "        BUILD_COMMAND \"\"\n" +
+                ")");
+        code.appendLine();
+
+        code.appendLine("ExternalProject_Get_Property(project_u8g2 SOURCE_DIR INSTALL_DIR)");
+        code.appendLine();
+
+        code.appendLine("# Hack (See: https://stackoverflow.com/questions/45516209/cmake-how-to-use-interface-include-directories-with-externalproject)");
+        code.appendLine("file(MAKE_DIRECTORY ${SOURCE_DIR}/csrc)");
+        code.appendLine();
+
+        code.appendLine("# Define all the sources");
+        code.appendLine("list(APPEND U8G2_SRC");
+        List<String> u8g2SourceFiles = fetchU8g2SourceFilesFromBranch(branch);
+
+        for (String sourceFile : u8g2SourceFiles) {
+            code.appendTabbedLine("\"${SOURCE_DIR}/csrc/%s\"", sourceFile);
+        }
+        code.appendTabbedLine(")");
+        code.appendLine();
+
+        code.appendLine("add_library(u8g2 STATIC ${U8G2_SRC})");
+        code.appendLine("add_dependencies(u8g2 project_u8g2)");
+        code.appendLine("target_include_directories(u8g2 PUBLIC \"${SOURCE_DIR}/csrc\")");
+        code.appendLine();
+
+        code.appendLine("# Mark these source files as generated or cmake will throw an error during reload");
+        code.appendLine("# - Ref 1: https://cmake.org/cmake/help/v3.12/prop_sf/GENERATED.html");
+        code.appendLine("# - Ref 2: https://stackoverflow.com/questions/47812230/cmake-make-add-library-depend-on-externalproject-add");
+        code.appendLine("set_source_files_properties(${U8G2_SRC} PROPERTIES GENERATED TRUE)");
+
+        return code.toString();
+    }
+
+    private String getSupportedBusInterfaces(Vendor vendor) {
+        ArrayList<String> interfaces = new ArrayList<>();
+        for (var config : vendor.getVendorConfigs()) {
+            for (var busInt : config.getSupportedInterfaces()) {
+                String description = null;
+                switch (busInt.getName().trim()) {
+                    case "COM_4WSPI":
+                        description = "<li>4-Wire SPI protocol</li>";
+                        break;
+                    case "COM_3WSPI":
+                        description = "<li>3-Wire SPI protocol</li>";
+                        break;
+                    case "COM_6800":
+                        description = "<li>Parallel 8-bit 6800 protocol</li>";
+                        break;
+                    case "COM_8080":
+                        description = "<li>Parallel 8-bit 8080 protocol</li>";
+                        break;
+                    case "COM_I2C":
+                        description = "<li>I2C protocol</li>";
+                        break;
+                    case "COM_UART":
+                        description = "<li>Serial/UART protocol</li>";
+                        break;
+                    case "COM_KS0108":
+                        description = "<li>Parallel 6800 protocol for KS0108 (more chip-select lines)</li>";
+                        break;
+                    case "COM_SED1520":
+                        description = "<li>Special protocol for SED1520</li>";
+                        break;
+                    default:
+                        description = "<li>UNKNOWN</li>";
+                        break;
+                }
+                interfaces.add(description);
+            }
+        }
+        return String.join("\n", interfaces).replaceAll("\\t", " ".repeat(4));
+    }
+
+    private List<String> fetchU8g2SourceFilesFromBranch(String branchName) {
+        try {
+            if (StringUtils.isBlank(branchName))
+                throw new IllegalArgumentException("Branch name must not be empty");
+            if (StringUtils.isBlank(lastU8g2Branch) || !lastU8g2Branch.equals(branchName) || u8g2FileCache.isEmpty()) {
+                List<GithubTreeNode> files = githubService.getNodesFromTree("csrc/", branchName);
+                u8g2FileCache = files.stream()
+                        .filter(p -> p.getPath().endsWith(".c") || p.getPath().endsWith(".h"))
+                        .map(m -> Paths.get(m.getPath()).getFileName().toString())
+                        .collect(Collectors.toList());
+                lastU8g2Branch = branchName;
+            }
+        } catch (IOException e) {
+            log.error("Failed to fetch contents from github", e);
+        }
+        return u8g2FileCache;
     }
 
     private List<String> fetchFontsFromLatestBranch(String branchName) {
@@ -282,5 +465,15 @@ public class CodeGenerator {
             log.error("Failed to fetch contents from github", e);
         }
         return fontCache;
+    }
+
+    private String generateFileComment(boolean addCommentBlocks) {
+        return generateFileComment(addCommentBlocks, "//");
+    }
+
+    private String generateFileComment(boolean addCommentBlocks, String commentKeyword) {
+        if (addCommentBlocks)
+            return String.format("%s\n%s THIS IS AN AUTO-GENERATED CODE!! DO NOT MODIFY (Last updated: %s)\n%s", commentKeyword, commentKeyword, dateTimeFormatter.format(ZonedDateTime.now()), commentKeyword);
+        return String.format("\nTHIS IS AN AUTO-GENERATED CODE!! DO NOT MODIFY (Last updated: %s)\n", dateTimeFormatter.format(ZonedDateTime.now()));
     }
 }
