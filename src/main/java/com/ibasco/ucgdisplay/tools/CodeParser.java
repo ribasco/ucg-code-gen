@@ -81,7 +81,10 @@ public class CodeParser {
                     vendorConfig.setVendor(vendor);
                     vendorConfig.setCadName(cad);
                     vendorConfig.setCadNameShort(cadShort);
-                    vendorConfig.setSupportedInterfaces(Arrays.stream(com.split("\\|")).map(commName -> new Comm(commName)).collect(Collectors.toList()));
+                    for (Comm comm : Arrays.stream(com.split("\\|")).map(commName -> new Comm(commName)).collect(Collectors.toList())) {
+                        comm.setValue(getCommValue(comm.getName()));
+                        vendorConfig.getSupportedInterfaces().add(comm);
+                    }
                     vendor.getVendorConfigs().add(vendorConfig);
 
                     controller.getVendorList().add(vendor);
@@ -94,6 +97,41 @@ public class CodeParser {
 
         log.debug("Found a total of {} controllers", result.size());
         return result;
+    }
+
+    private int getCommValue(String comm) {
+        switch (comm) {
+            case "COM_4WSPI": {
+                return 0x0001;
+            }
+            case "COM_3WSPI": {
+                return 0x0002;
+            }
+            case "COM_6800": {
+                return 0x0004;
+            }
+            case "COM_8080": {
+                return 0x0008;
+            }
+            case "COM_I2C": {
+                return 0x0010;
+            }
+            case "COM_ST7920SPI": {
+                return 0x0020;
+            }
+            case "COM_UART": {
+                return 0x0040;
+            }
+            case "COM_KS0108": {
+                return 0x0080;
+            }
+            case "COM_SED1520": {
+                return 0x0100;
+            }
+            default: {
+                return -1;
+            }
+        }
     }
 
     private Vendor extractVendor(Controller controller, String vendorName) {
