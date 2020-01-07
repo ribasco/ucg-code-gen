@@ -346,11 +346,12 @@ public class CodeGenerator {
 
         code.appendLine("#1: https://github.com/olikraus/u8g2.git");
         code.appendLine("#2: /home/raffy/projects/u8g2.git");
+        code.appendLine("#3: https://github.com/ribasco/u8g2.git");
         code.appendLine();
 
         code.appendLine("ExternalProject_Add(\n" +
                 "        project_u8g2\n" +
-                "        GIT_REPOSITORY \"https://github.com/olikraus/u8g2.git\"\n" +
+                "        GIT_REPOSITORY \"https://github.com/ribasco/u8g2.git\"\n" +
                 "        GIT_TAG \"master\"\n" +
                 "        PREFIX ${PROJ_PREFIX}\n" +
                 "        INSTALL_COMMAND \"\"\n" +
