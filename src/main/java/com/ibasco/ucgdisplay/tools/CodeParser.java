@@ -2,10 +2,7 @@ package com.ibasco.ucgdisplay.tools;
 
 import static com.ibasco.ucgdisplay.tools.util.StringUtils.sanitizeData;
 
-import com.ibasco.ucgdisplay.tools.beans.Comm;
-import com.ibasco.ucgdisplay.tools.beans.Controller;
-import com.ibasco.ucgdisplay.tools.beans.Vendor;
-import com.ibasco.ucgdisplay.tools.beans.VendorConfig;
+import com.ibasco.ucgdisplay.tools.beans.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,7 +27,13 @@ public class CodeParser {
 
     private static final Pattern PATTERN_PARSE_DISPLAY = Pattern.compile("\\{\\\"?(?<display>.*?)\\\"?\\}");
 
-    public List<Controller> parseCode(String code) {
+    private static final Pattern PATTERN_CODE_COMMENTS = Pattern.compile("\\/\\*.+\\*\\/");
+
+    private static final Pattern PATTERN_BLANK_LINES = Pattern.compile("(?m)^[ \t]*\n?\n");
+
+    private static final Pattern PATTERN_INTERFACE = Pattern.compile("(?s)\\{.+?\\\"(?<interfaceName>.*?)\\\"[\\s\\t]*,.+?\\\"(?<setpinFunction>.*?)\\\"[\\s\\t]*,.+?\\\"(?<arduinoComProcedure>.*?)\\\"[\\s\\t]*,.+?\\\"(?<arduinoGpioProcedure>.*?)\\\"[\\s\\t]*,.+?\\\"(?<pinsWithType>.*?)\\\"[\\s\\t]*,.+?\\\"(?<pinsPlain>.*?)\\\"[\\s\\t]*,.+?\\\"(?<pinsMdPlain>.*?)\\\"[\\s\\t]*,.+?\\\"(?<genericComProcedure>.*?)\\\".+?\\}");
+
+    public List<Controller> parseControllerCode(String code) {
         ArrayList<Controller> result;
         Matcher controllerMatcher = PATTERN_EXTRACT_CONTROLLERS.matcher(code);
         Map<String, Controller> controllerMap = new HashMap<>();
@@ -53,18 +56,18 @@ public class CodeParser {
                 String vendors = entryMatcher.group("vendors");
                 String[] vendorCodes = vendors.split(",");
 
-                //log.debug("name: {}, tile width = {}, tile height = {}, hvline = {}, cad = {}, cadshort = {}, com = {}, notes = {}, flag = {}, vendors = {}", name, tileWidth, tileHeight, bufferLayout, cad, cadShort, com, notes, flag, vendors);
+                log.debug("name: {}, tile width = {}, tile height = {}, hvline = {}, cad = {}, cadshort = {}, com = {}, notes = {}, flag = {}, vendors = {}", name, tileWidth, tileHeight, bufferLayout, cad, cadShort, com, notes, flag, vendors);
 
                 Controller controller = controllerMap.computeIfAbsent(name, s -> new Controller(name));
 
-                for (String vendorCode : vendorCodes) {
+                for (var vendorCode : vendorCodes) {
                     String vendorName = parseVendorName(vendorCode).toUpperCase();
 
                     //Skip "null" vendors
                     if ("null".equalsIgnoreCase(vendorName))
                         continue;
 
-                    Vendor vendor = extractVendor(controller, vendorName);
+                    var vendor = extractVendor(controller, vendorName);
 
                     //Create a new entry if not yet existing
                     if (vendor == null) {
@@ -77,16 +80,17 @@ public class CodeParser {
                     }
 
                     //Update config
-                    VendorConfig vendorConfig = new VendorConfig();
+                    var vendorConfig = new VendorConfig();
                     vendorConfig.setVendor(vendor);
                     vendorConfig.setCadName(cad);
                     vendorConfig.setCadNameShort(cadShort);
-                    for (Comm comm : Arrays.stream(com.split("\\|")).map(commName -> new Comm(commName)).collect(Collectors.toList())) {
+
+                    for (var comm : Arrays.stream(com.split("\\|")).map(commName -> new Comm(commName)).collect(Collectors.toList())) {
                         comm.setValue(getCommValue(comm.getName()));
                         vendorConfig.getSupportedInterfaces().add(comm);
                     }
-                    vendor.getVendorConfigs().add(vendorConfig);
 
+                    vendor.getVendorConfigs().add(vendorConfig);
                     controller.getVendorList().add(vendor);
                 }
             }
@@ -97,6 +101,37 @@ public class CodeParser {
 
         log.debug("Found a total of {} controllers", result.size());
         return result;
+    }
+
+    public List<CommInterface> parseInterfaceCode(String code) {
+        var interfaces = new ArrayList<CommInterface>();
+        code = stripBlankLines(stripCodeComments(code));
+        log.info("[PARSE-INTERFACE] Parsing comm interface code");
+        Matcher interfaceMatcher = PATTERN_INTERFACE.matcher(code);
+        int index = 0;
+        while (interfaceMatcher.find()) {
+            String name = interfaceMatcher.group("interfaceName");
+            String setPinFunction = interfaceMatcher.group("setpinFunction");
+            String arduinoComProc = interfaceMatcher.group("arduinoComProcedure");
+            String arduinoGpioProc = interfaceMatcher.group("arduinoGpioProcedure");
+            String pinsWithType = interfaceMatcher.group("pinsWithType");
+            String pinsPlain = interfaceMatcher.group("pinsPlain");
+            String pinsMdPlain = interfaceMatcher.group("pinsMdPlain");
+            String genericComProc = interfaceMatcher.group("genericComProcedure");
+            var commInterface = new CommInterface(index++, name, setPinFunction, arduinoComProc, arduinoGpioProc, pinsWithType, pinsPlain, pinsMdPlain, genericComProc);
+            interfaces.add(commInterface);
+            log.info("[PARSE-INTERFACE] Parsed Comm Interface = {}", commInterface);
+        }
+        log.info("[PARSE-INTERFACE] Parsed a total of {} interfaces", interfaces.size());
+        return interfaces;
+    }
+
+    private String stripCodeComments(String code) {
+        return code.replaceAll(PATTERN_CODE_COMMENTS.pattern(), "");
+    }
+
+    private String stripBlankLines(String code) {
+        return code.replaceAll(PATTERN_BLANK_LINES.pattern(), "");
     }
 
     private int getCommValue(String comm) {

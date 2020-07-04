@@ -1,6 +1,6 @@
 package com.ibasco.ucgdisplay.tools;
 
-import com.ibasco.ucgdisplay.tools.beans.Controller;
+import com.ibasco.ucgdisplay.tools.service.GithubService;
 import com.squareup.javapoet.JavaFile;
 import org.apache.commons.cli.*;
 import org.slf4j.Logger;
@@ -26,7 +26,7 @@ import java.util.Scanner;
  * - Glcd.java
  * <p>
  * com.ibasco.ucgdisplay.drivers.glcd.enums
- * - GlcdControllerType.java
+ * - GlcdController.java
  * - GlcdFont.java
  * - GlcdSize.java
  * <p>
@@ -40,9 +40,9 @@ public class Application {
 
     private static final Logger log = LoggerFactory.getLogger(Application.class);
 
-    private CodeExtractor extractor = new CodeExtractor();
+    private final CodeExtractor extractor = new CodeExtractor();
 
-    private CodeParser parser = new CodeParser();
+    private final CodeParser parser = new CodeParser();
 
     private final Options options = new Options();
 
@@ -129,48 +129,44 @@ public class Application {
             System.exit(1);
         }
 
-        String code = (testMode) ? extractor.extractControllersFromUrl(testResource.toExternalForm()) : extractor.extractControllersFromBranch(branchName);
-        List<Controller> controllers = parser.parseCode(code);
-        CodeGenerator generator = new CodeGenerator();
+        String controllerCode = (testMode) ? extractor.extractControllersFromUrl(testResource.toExternalForm()) : extractor.extractControllersFromBranch(branchName);
+        String interfaceCode = (testMode) ? extractor.extractInterfacesFromUrl(testResource.toExternalForm()) : extractor.extractInterfacesFromUrl(String.format(CodeExtractor.DEFAULT_CODEBUILD_URL, GithubService.REPO_OWNER, branchName));
+        var controllers = parser.parseControllerCode(controllerCode);
+        var interfaces = parser.parseInterfaceCode(interfaceCode);
+        var generator = new CodeGenerator(extractor);
         generator.setIncludeComments(includeComments);
 
         //Retrieve exclusions
-        List<String> excludedFonts = getExclusions(fontExclusionFilePath, "/excludedFonts.properties");
-        List<String> excludedControllers = getExclusions(controllerExclusionFilePath, "/excludedControllers.properties");
+        var excludedFonts = getExclusions(fontExclusionFilePath, "/excludedFonts.properties");
+        var excludedControllers = getExclusions(controllerExclusionFilePath, "/excludedControllers.properties");
 
-        log.debug("Added {} font exclusions", excludedFonts.size());
-        log.debug("Added {} controller exclusions", excludedControllers.size());
+        log.info("Added {} font exclusions", excludedFonts.size());
+        log.info("Added {} controller exclusions", excludedControllers.size());
 
         final JavaFile glcdFile = generator.generateGlcdCode(controllers, excludedControllers);
         final JavaFile glcdControllerTypes = generator.generateControllerTypeEnum(controllers);
         final JavaFile glcdSize = generator.generateGlcdSizeEnum(controllers);
         final JavaFile glcdFontEnum = generator.generateGlcdFontEnum(branchName, excludedFonts);
+        final JavaFile interfaceLookupCode = generator.generateInterfaceLookup(interfaces);
         final String fontCppCode = generator.generateFontLookupTableCpp(branchName, excludedFonts);
         final String setupCppCode = generator.generateSetupLookupTableCpp(controllers, excludedControllers);
         final String u8g2CmakeFile = generator.generateU8g2CmakeFile(branchName);
 
-        log.debug(glcdFile.toString());
-        log.debug(glcdControllerTypes.toString());
-        log.debug(glcdSize.toString());
-        log.debug(glcdFontEnum.toString());
-        log.debug(fontCppCode);
-        log.debug(setupCppCode);
-        log.debug(u8g2CmakeFile);
-
         //Create temp directory
-        Path tempDirWithPrefix = Files.createTempDirectory("ucg-code-gen-");
+        var tempDirWithPrefix = Files.createTempDirectory("ucg-code-gen-");
 
         //Export to Project
         try {
-            log.debug("Exporting generated code");
-            Path tmpGlcdPath = Paths.get(tempDirWithPrefix.toString(), "Glcd.java");
-            Path tmpGlcdControllerTypePath = Paths.get(tempDirWithPrefix.toString(), "GlcdControllerType.java");
-            Path tmpGlcdSizePath = Paths.get(tempDirWithPrefix.toString(), "GlcdSize.java");
-            Path tmpGlcdFontEnumPath = Paths.get(tempDirWithPrefix.toString(), "GlcdFont.java");
-            Path tmpU8g2LookupFontPath = Paths.get(tempDirWithPrefix.toString(), "U8g2LookupFonts.cpp");
-            Path tmpU8g2LookupSetupPath = Paths.get(tempDirWithPrefix.toString(), "U8g2LookupSetup.cpp");
-            Path tmpU8g2CmakeFilePath = Paths.get(tempDirWithPrefix.toString(), "u8g2.cmake");
-            Path tmpControllerManifest = Paths.get(tempDirWithPrefix.toString(), "controllers.json");
+            log.info("Exporting generated code");
+            var tmpGlcdPath = Paths.get(tempDirWithPrefix.toString(), "Glcd.java");
+            var tmpGlcdControllerTypePath = Paths.get(tempDirWithPrefix.toString(), "GlcdController.java");
+            var tmpGlcdSizePath = Paths.get(tempDirWithPrefix.toString(), "GlcdSize.java");
+            var tmpGlcdFontEnumPath = Paths.get(tempDirWithPrefix.toString(), "GlcdFont.java");
+            var tmpU8g2LookupFontPath = Paths.get(tempDirWithPrefix.toString(), "U8g2LookupFonts.cpp");
+            var tmpU8g2LookupSetupPath = Paths.get(tempDirWithPrefix.toString(), "U8g2LookupSetup.cpp");
+            var tmpU8g2CmakeFilePath = Paths.get(tempDirWithPrefix.toString(), "u8g2.cmake");
+            var tmpControllerManifest = Paths.get(tempDirWithPrefix.toString(), "controllers.json");
+            var tmpGlcdInterfaceLookupPath = Paths.get(tempDirWithPrefix.toString(), "GlcdInterfaceLookup.java");
 
             exportCodeToFile(tmpGlcdPath, glcdFile.toString());
             exportCodeToFile(tmpGlcdControllerTypePath, glcdControllerTypes.toString());
@@ -179,18 +175,20 @@ public class Application {
             exportCodeToFile(tmpU8g2LookupFontPath, fontCppCode);
             exportCodeToFile(tmpU8g2LookupSetupPath, setupCppCode);
             exportCodeToFile(tmpU8g2CmakeFilePath, u8g2CmakeFile);
+            exportCodeToFile(tmpGlcdInterfaceLookupPath, interfaceLookupCode.toString());
 
             if (!Files.isDirectory(projectPath))
                 throw new IllegalStateException("Project path is invalid: " + projectPath);
 
-            Path exportPathGlcd = Paths.get(projectPath.toString(), "drivers/glcd/src/main/java/com/ibasco/ucgdisplay/drivers/glcd/Glcd.java");
-            Path exportPathGlcdFont = Paths.get(projectPath.toString(), "drivers/glcd/src/main/java/com/ibasco/ucgdisplay/drivers/glcd/enums/GlcdFont.java");
-            Path exportPathGlcdSize = Paths.get(projectPath.toString(), "drivers/glcd/src/main/java/com/ibasco/ucgdisplay/drivers/glcd/enums/GlcdSize.java");
-            Path exportPathGlcdControllerType = Paths.get(projectPath.toString(), "drivers/glcd/src/main/java/com/ibasco/ucgdisplay/drivers/glcd/enums/GlcdControllerType.java");
-            Path exportPathU8g2LookupFontPath = Paths.get(projectPath.toString(), "native/modules/graphics/src/main/cpp/U8g2LookupFonts.cpp");
-            Path exportPathU8g2LookupSetupPath = Paths.get(projectPath.toString(), "native/modules/graphics/src/main/cpp/U8g2LookupSetup.cpp");
-            Path exportPathU8g2CmakeFilePath = Paths.get(projectPath.toString(), "native/cmake/external/u8g2.cmake");
-            Path exportPathManifest = Paths.get(projectPath.toString(), "docs/controllers.json");
+            var exportPathGlcd = Paths.get(projectPath.toString(), "drivers/glcd/src/main/java/com/ibasco/ucgdisplay/drivers/glcd/Glcd.java");
+            var exportPathGlcdFont = Paths.get(projectPath.toString(), "drivers/glcd/src/main/java/com/ibasco/ucgdisplay/drivers/glcd/enums/GlcdFont.java");
+            var exportPathGlcdSize = Paths.get(projectPath.toString(), "drivers/glcd/src/main/java/com/ibasco/ucgdisplay/drivers/glcd/enums/GlcdSize.java");
+            var exportPathGlcdControllerType = Paths.get(projectPath.toString(), "drivers/glcd/src/main/java/com/ibasco/ucgdisplay/drivers/glcd/enums/GlcdController.java");
+            var exportPathU8g2LookupFontPath = Paths.get(projectPath.toString(), "native/modules/graphics/src/main/cpp/U8g2LookupFonts.cpp");
+            var exportPathU8g2LookupSetupPath = Paths.get(projectPath.toString(), "native/modules/graphics/src/main/cpp/U8g2LookupSetup.cpp");
+            var exportPathU8g2CmakeFilePath = Paths.get(projectPath.toString(), "native/cmake/external/u8g2.cmake");
+            var exportPathManifest = Paths.get(projectPath.toString(), "docs/controllers.json");
+            var exportInterfaceLookup = Paths.get(projectPath.toString(), "drivers/glcd/src/main/java/com/ibasco/ucgdisplay/drivers/glcd/GlcdInterfaceLookup.java");
 
             //Copy to project path
             exportToDest(tmpGlcdPath, exportPathGlcd);
@@ -200,14 +198,15 @@ public class Application {
             exportToDest(tmpU8g2LookupFontPath, exportPathU8g2LookupFontPath);
             exportToDest(tmpU8g2LookupSetupPath, exportPathU8g2LookupSetupPath);
             exportToDest(tmpU8g2CmakeFilePath, exportPathU8g2CmakeFilePath);
+            exportToDest(tmpGlcdInterfaceLookupPath, exportInterfaceLookup);
 
             //Create manifest
-            log.debug("Creating manifest file at '{}'", tmpControllerManifest);
+            log.info("Creating manifest file at '{}'", tmpControllerManifest);
             String manifestJson = generator.generateManifest(controllers);
             exportCodeToFile(tmpControllerManifest, manifestJson);
             exportToDest(tmpControllerManifest, exportPathManifest);
         } finally {
-            log.debug("Cleaning up resources");
+            log.info("Cleaning up resources");
             //Cleanup
             recursiveDeleteOnExit(tempDirWithPrefix);
         }

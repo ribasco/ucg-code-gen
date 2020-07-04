@@ -26,9 +26,11 @@ public class GithubService {
 
     private final Gson gson = new Gson();
 
+    public static final String REPO_OWNER = "ribasco";
+
     public List<GithubTreeNode> getNodesFromTree(String path, String branch) throws IOException {
         try {
-            HttpRequest request = buildGetRequest(String.format("https://api.github.com/repos/olikraus/u8g2/git/trees/%s?recursive=1", branch));
+            HttpRequest request = buildGetRequest(String.format("https://api.github.com/repos/%s/u8g2/git/trees/%s?recursive=1", REPO_OWNER, branch));
             String response = sendAndGetString(request);
             GithubTree tree = gson.fromJson(response, GithubTree.class);
             return tree.getTreeNodes().stream().filter(p -> p.getPath().startsWith(path)).collect(Collectors.toList());
@@ -39,8 +41,8 @@ public class GithubService {
 
     public List<GithubFile> getPathContents(String path, String branch) throws IOException {
         try {
-            HttpRequest request = buildGetRequest("https://api.github.com/repos/olikraus/u8g2/contents/%s?ref=%s", path, branch);
-            log.debug("Retrieving response");
+            HttpRequest request = buildGetRequest("https://api.github.com/repos/%s/u8g2/contents/%s?ref=%s", REPO_OWNER, path, branch);
+            log.debug("Retrieving response from url: {}", request.uri().toURL());
             String response = sendAndGetString(request);
             Type collectionType = new TypeToken<List<GithubFile>>() {
             }.getType();

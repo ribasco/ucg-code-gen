@@ -3,10 +3,13 @@ package com.ibasco.ucgdisplay.tools;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
+import com.ibasco.ucgdisplay.drivers.glcd.GlcdInterfaceInfo;
+import com.ibasco.ucgdisplay.drivers.glcd.GlcdInterfaceLookup;
 import com.ibasco.ucgdisplay.drivers.glcd.GlcdDisplay;
 import com.ibasco.ucgdisplay.drivers.glcd.GlcdSetupInfo;
-import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdBufferType;
-import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdControllerType;
+import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdBufferLayout;
+import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdCommProtocol;
+import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdController;
 import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdSize;
 import com.ibasco.ucgdisplay.tools.beans.*;
 import com.ibasco.ucgdisplay.tools.service.GithubService;
@@ -56,12 +59,64 @@ public class CodeGenerator {
 
     private DateTimeFormatter dateTimeFormatter = DateTimeFormatter.RFC_1123_DATE_TIME;
 
+    private CodeExtractor extractor;
+
+    public CodeGenerator(CodeExtractor extractor) {
+        this.extractor = extractor;
+    }
+
     public boolean isIncludeComments() {
         return includeComments;
     }
 
     public void setIncludeComments(boolean includeComments) {
         this.includeComments = includeComments;
+    }
+
+    public JavaFile generateInterfaceLookup(List<CommInterface> interfaces) {
+        var classBuilder = TypeSpec.classBuilder("GlcdInterfaceLookup").addModifiers(Modifier.PUBLIC);
+        var staticBlockBuilder = CodeBlock.builder();
+
+        ClassName commInfoClass = ClassName.get(GlcdInterfaceInfo.class);
+        ClassName arrayList = ClassName.get("java.util", "ArrayList");
+        TypeName listOfInfoClass = ParameterizedTypeName.get(arrayList, commInfoClass);
+
+        var fieldBuilder = FieldSpec.builder(listOfInfoClass, "interfaceList")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("new $T<>()", arrayList);
+
+        //add field
+        classBuilder.addField(fieldBuilder.build());
+
+        for (CommInterface commInt : interfaces) {
+            staticBlockBuilder.addStatement("interfaceList.add(new $T($L, $S, $S, $S, $S, $S, $S, $S, $S));",
+                    GlcdInterfaceInfo.class,
+                    commInt.index(),
+                    commInt.name(),
+                    commInt.setPinFunction(),
+                    commInt.arduinoComProcedure(),
+                    commInt.arduinoGpioProcedure(),
+                    commInt.pinsWithType(),
+                    commInt.pinsPlain(),
+                    commInt.pinsMarkdown(),
+                    commInt.genericComProcedure());
+        }
+
+        //add static block
+        classBuilder.addStaticBlock(staticBlockBuilder.build());
+
+        //add method
+        classBuilder.addMethod(MethodSpec.methodBuilder("getInfoList")
+                .addStatement("return $T.interfaceList", GlcdInterfaceLookup.class)
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(listOfInfoClass)
+                .build()
+        );
+
+        JavaFile.Builder javaBuilder = JavaFile.builder("com.ibasco.ucgdisplay.drivers.glcd", classBuilder.build());
+        if (includeComments)
+            javaBuilder.addFileComment(generateFileComment(false));
+        return javaBuilder.build();
     }
 
     public String generateManifest(List<Controller> controllers) {
@@ -121,7 +176,7 @@ public class CodeGenerator {
                         vendor.getName(),
                         vendor.getTileWidth() * 8,
                         vendor.getTileHeight() * 8,
-                        getSupportedBusInterfaces(vendor),
+                        getSupportedCommProtocols(vendor),
                         !StringUtils.isBlank(vendor.getNotes()) ? vendor.getNotes() : "N/A"
                 );
 
@@ -136,11 +191,11 @@ public class CodeGenerator {
 
                 CodeBlock.Builder displayCodeBlockBuilder = CodeBlock.builder()
                         .add("new $T(", GlcdDisplay.class)
-                        .add("\n    $T.$L,", GlcdControllerType.class, controller.getName())
+                        .add("\n    $T.$L,", GlcdController.class, controller.getName())
                         .add("\n    ").add("$S,", vendorName)
                         .add("\n    ").add("$L,", vendor.getTileWidth())
                         .add("\n    ").add("$L,", vendor.getTileHeight())
-                        .add("\n    ").add("$T.$L,", GlcdBufferType.class, bufferLayout);
+                        .add("\n    ").add("$T.$L,", GlcdBufferLayout.class, bufferLayout);
 
                 CodeBlock.Builder setupCodeBlock = CodeBlock.builder();
 
@@ -168,7 +223,7 @@ public class CodeGenerator {
     }
 
     public JavaFile generateControllerTypeEnum(List<Controller> controllers) {
-        TypeSpec.Builder enumSpec = TypeSpec.enumBuilder("GlcdControllerType").addModifiers(Modifier.PUBLIC);
+        TypeSpec.Builder enumSpec = TypeSpec.enumBuilder("GlcdController").addModifiers(Modifier.PUBLIC);
         for (Controller controller : controllers)
             enumSpec.addEnumConstant(controller.getName());
         JavaFile.Builder javaBuilder = JavaFile.builder("com.ibasco.ucgdisplay.drivers.glcd.enums", enumSpec.build());
@@ -241,15 +296,25 @@ public class CodeGenerator {
         return javaBuilder.build();
     }
 
-    public JavaFile generateGlcdFontEnum(String branchName, List<String> exclusions) {
+    public JavaFile generateGlcdFontEnum(String branchName, List<String> exclusions) throws IOException {
         TypeSpec.Builder enumSpec = TypeSpec.enumBuilder("GlcdFont").addModifiers(Modifier.PUBLIC);
 
         enumSpec.addField(String.class, "fontKey", Modifier.PRIVATE);
+        enumSpec.addField(String.class, "fontDescription", Modifier.PRIVATE);
+        enumSpec.addField(Integer.class, "glyphCount", Modifier.PRIVATE);
+        enumSpec.addField(Integer.class, "glyphTotal", Modifier.PRIVATE);
+
         enumSpec.addMethod(MethodSpec.constructorBuilder()
                 .addParameter(TypeName.get(String.class), "fontKey")
+                .addParameter(TypeName.INT, "glyphCount")
+                .addParameter(TypeName.INT, "glyphTotal")
+                .addParameter(TypeName.get(String.class), "fontDescription")
                 .addStatement("this.fontKey = fontKey")
-                .build())
-        ;
+                .addStatement("this.glyphCount = glyphCount")
+                .addStatement("this.glyphTotal = glyphTotal")
+                .addStatement("this.fontDescription = fontDescription")
+                .build());
+
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("getKey")
                         .addModifiers(Modifier.PUBLIC)
@@ -257,20 +322,41 @@ public class CodeGenerator {
                         .addStatement("return fontKey")
                         .build()
         );
+        enumSpec.addMethod(
+                MethodSpec.methodBuilder("getGlyphCount")
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(TypeName.INT)
+                        .addStatement("return glyphCount")
+                        .build()
+        );
+        enumSpec.addMethod(
+                MethodSpec.methodBuilder("getGlyphTotal")
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(TypeName.INT)
+                        .addStatement("return glyphTotal")
+                        .build()
+        );
+        enumSpec.addMethod(
+                MethodSpec.methodBuilder("getDescription")
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(String.class)
+                        .addStatement("return fontDescription")
+                        .build()
+        );
 
-        List<String> fonts = fetchFontsFromLatestBranch(branchName);
+        var fonts = extractor.extractFontFilesFromZip(GithubService.REPO_OWNER);
 
         if (fonts == null)
             throw new IllegalStateException("Unable to fetch fonts from Github service");
 
-        for (String font : fonts) {
-            String fontKey = font.replaceAll(".c", "");
-            String name = font.replaceAll("u8g2_|\\.c", "").toUpperCase();
-            if (exclusions.contains(font)) {
-                log.warn("generateGlcdFontEnum() : Excluded font: {}", font);
+        for (var font : fonts) {
+            String fontKey = font.name().replaceAll("\\.c", "");
+            String name = font.name().replaceAll("u8g2_|\\.c", "").toUpperCase();
+            if (exclusions.contains(fontKey)) {
+                log.debug("generateGlcdFontEnum() : Excluded font: {}", font);
                 continue;
             }
-            enumSpec.addEnumConstant(name, TypeSpec.anonymousClassBuilder("$S", fontKey).build());
+            enumSpec.addEnumConstant(name, TypeSpec.anonymousClassBuilder("$S, $L, $L, $S", fontKey, font.glyphCount(), font.glyphTotal(), font.desc()).build());
         }
         JavaFile.Builder javaBuilder = JavaFile.builder("com.ibasco.ucgdisplay.drivers.glcd.enums", enumSpec.build());
         if (includeComments)
@@ -314,12 +400,12 @@ public class CodeGenerator {
 
         code.appendLine("void U8g2hal_InitSetupFunctions(u8g2_setup_func_map_t &setup_map) {");
         code.appendTabbedLine("setup_map.clear();");
-        for (Controller controller : controllers) {
+        for (var controller : controllers) {
             if (isExcluded(controller, excludedControllers)) {
                 log.warn("generateSetupLookupTableCpp(): Excluded controller: {}", controller.getName());
                 continue;
             }
-            for (Vendor vendor : controller.getVendorList()) {
+            for (var vendor : controller.getVendorList()) {
                 for (VendorConfig config : vendor.getVendorConfigs()) {
                     String name = StringUtils.toU8g2SetupName(config);
                     code.appendTabbedLine("setup_map[\"%s\"] = %s;", name, name);
@@ -331,7 +417,7 @@ public class CodeGenerator {
     }
 
     public String generateU8g2CmakeFile(String branch) {
-        CodeBuilder code = new CodeBuilder();
+        var code = new CodeBuilder();
         code.setUseUnixStyleSeparator(true);
 
         if (includeComments) {
@@ -345,7 +431,7 @@ public class CodeGenerator {
         code.appendLine();
 
         code.appendLine("#1: https://github.com/olikraus/u8g2.git");
-        code.appendLine("#2: /home/raffy/projects/u8g2.git");
+        code.appendLine("#2: /home/raffy/projects/u8g2-ribasco");
         code.appendLine("#3: https://github.com/ribasco/u8g2.git");
         code.appendLine();
 
@@ -390,40 +476,62 @@ public class CodeGenerator {
         return code.toString();
     }
 
-    private String getSupportedBusInterfaces(Vendor vendor) {
+    private void createFieldGetter(TypeSpec.Builder enumBuilder, MethodSpec.Builder constructorBuilder, Type type, String field) {
+        //Add field
+        enumBuilder.addField(type, field, Modifier.PRIVATE, Modifier.FINAL);
+        //Add constructor param
+        constructorBuilder.addParameter(TypeName.get(type), field).addStatement(String.format("this.%s = %s", field, field));
+        String methodName = "get" + field.substring(0, 1).toUpperCase() + field.substring(1);
+        //Add getter method
+        enumBuilder.addMethod(
+                MethodSpec.methodBuilder(methodName)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(type)
+                        .addStatement("return " + field)
+                        .build()
+        );
+    }
+
+    private String applyPrefix(String value) {
+        return String.format("%s.%s", "GlcdCommProtocol", value);
+    }
+
+    private String mapToCommProtocol(CommInterface commInt) {
+        //NOTE: (CASE 5) From U8G2 -> 3-wire hardware spi is NOT IMPLEMENTED
+        return switch (commInt.index()) {
+            case 0 -> applyPrefix("SPI_SW_4WIRE");
+            case 1 -> applyPrefix("SPI_HW_4WIRE");
+            case 2 -> applyPrefix("PARALLEL_6800");
+            case 3 -> applyPrefix("PARALLEL_8080");
+            case 4, 5 -> applyPrefix("SPI_SW_3WIRE");
+            case 6 -> applyPrefix("I2C_SW");
+            case 7 -> applyPrefix("I2C_HW");
+            case 8 -> applyPrefix("SPI_SW_4WIRE_ST7920");
+            case 9 -> applyPrefix("SPI_HW_4WIRE_ST7920");
+            case 10 -> applyPrefix("I2C_HW_2ND");
+            case 11 -> applyPrefix("PARALLEL_6800_KS0108");
+            case 12 -> applyPrefix("SPI_HW_4WIRE_2ND");
+            case 13 -> applyPrefix("SED1520");
+            case 14 -> applyPrefix("SPI_HW_ST7920_2ND");
+            default -> throw new IllegalStateException("Unmapped comm interface: " + commInt);
+        };
+    }
+
+    private String getSupportedCommProtocols(Vendor vendor) {
         ArrayList<String> interfaces = new ArrayList<>();
         for (var config : vendor.getVendorConfigs()) {
             for (var busInt : config.getSupportedInterfaces()) {
-                String description = null;
-                switch (busInt.getName().trim()) {
-                    case "COM_4WSPI":
-                        description = "<li>4-Wire SPI protocol</li>";
-                        break;
-                    case "COM_3WSPI":
-                        description = "<li>3-Wire SPI protocol</li>";
-                        break;
-                    case "COM_6800":
-                        description = "<li>Parallel 8-bit 6800 protocol</li>";
-                        break;
-                    case "COM_8080":
-                        description = "<li>Parallel 8-bit 8080 protocol</li>";
-                        break;
-                    case "COM_I2C":
-                        description = "<li>I2C protocol</li>";
-                        break;
-                    case "COM_UART":
-                        description = "<li>Serial/UART protocol</li>";
-                        break;
-                    case "COM_KS0108":
-                        description = "<li>Parallel 6800 protocol for KS0108 (more chip-select lines)</li>";
-                        break;
-                    case "COM_SED1520":
-                        description = "<li>Special protocol for SED1520</li>";
-                        break;
-                    default:
-                        description = "<li>UNKNOWN</li>";
-                        break;
-                }
+                String description = switch (busInt.getName().trim()) {
+                    case "COM_4WSPI" -> "<li>4-Wire SPI protocol</li>";
+                    case "COM_3WSPI" -> "<li>3-Wire SPI protocol</li>";
+                    case "COM_6800" -> "<li>Parallel 8-bit 6800 protocol</li>";
+                    case "COM_8080" -> "<li>Parallel 8-bit 8080 protocol</li>";
+                    case "COM_I2C" -> "<li>I2C protocol</li>";
+                    case "COM_UART" -> "<li>Serial/UART protocol</li>";
+                    case "COM_KS0108" -> "<li>Parallel 6800 protocol for KS0108 (more chip-select lines)</li>";
+                    case "COM_SED1520" -> "<li>Special protocol for SED1520</li>";
+                    default -> "<li>UNKNOWN</li>";
+                };
                 interfaces.add(description);
             }
         }
