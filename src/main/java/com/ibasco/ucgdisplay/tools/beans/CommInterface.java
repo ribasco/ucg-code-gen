@@ -1,11 +1,14 @@
 package com.ibasco.ucgdisplay.tools.beans;
 
-public record   CommInterface(int index, String name, String setPinFunction, String arduinoComProcedure,
+public record CommInterface(int index, String protocol, String name, String setPinFunction, String arduinoComProcedure,
                             String arduinoGpioProcedure, String pinsWithType, String pinsPlain,
                             String pinsMarkdown, String genericComProcedure) {
+
     @Override
     public String toString() {
-        return "name='" + name + '\'' +
+        return "index=" + index +
+                ", protocol=" + protocol +
+                ", name='" + name + '\'' +
                 ", setPinFunction='" + setPinFunction + '\'' +
                 ", arduinoComProcedure='" + arduinoComProcedure + '\'' +
                 ", arduinoGpioProcedure='" + arduinoGpioProcedure + '\'' +

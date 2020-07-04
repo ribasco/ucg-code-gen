@@ -151,7 +151,6 @@ public class Application {
         final String fontCppCode = generator.generateFontLookupTableCpp(branchName, excludedFonts);
         final String setupCppCode = generator.generateSetupLookupTableCpp(controllers, excludedControllers);
         final String u8g2CmakeFile = generator.generateU8g2CmakeFile(branchName);
-
         //Create temp directory
         var tempDirWithPrefix = Files.createTempDirectory("ucg-code-gen-");
 

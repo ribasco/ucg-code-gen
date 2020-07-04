@@ -1,8 +1,7 @@
 package com.ibasco.ucgdisplay.tools;
 
-import static com.ibasco.ucgdisplay.tools.util.StringUtils.sanitizeData;
-
 import com.ibasco.ucgdisplay.tools.beans.*;
+import static com.ibasco.ucgdisplay.tools.util.StringUtils.sanitizeData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -118,12 +117,38 @@ public class CodeParser {
             String pinsPlain = interfaceMatcher.group("pinsPlain");
             String pinsMdPlain = interfaceMatcher.group("pinsMdPlain");
             String genericComProc = interfaceMatcher.group("genericComProcedure");
-            var commInterface = new CommInterface(index++, name, setPinFunction, arduinoComProc, arduinoGpioProc, pinsWithType, pinsPlain, pinsMdPlain, genericComProc);
+            String commProto = mapToCommProtocol(index);
+            var commInterface = new CommInterface(index++, commProto, name, setPinFunction, arduinoComProc, arduinoGpioProc, pinsWithType, pinsPlain, pinsMdPlain, genericComProc);
             interfaces.add(commInterface);
             log.info("[PARSE-INTERFACE] Parsed Comm Interface = {}", commInterface);
         }
         log.info("[PARSE-INTERFACE] Parsed a total of {} interfaces", interfaces.size());
         return interfaces;
+    }
+
+    private String applyPrefix(String value) {
+        return String.format("%s.%s", "GlcdCommProtocol", value);
+    }
+
+    private String mapToCommProtocol(int index) {
+        return switch (index) {
+            case 0 -> applyPrefix("SPI_SW_4WIRE");
+            case 1 -> applyPrefix("SPI_HW_4WIRE");
+            case 2 -> applyPrefix("PARALLEL_6800");
+            case 3 -> applyPrefix("PARALLEL_8080");
+            case 4 -> applyPrefix("SPI_SW_3WIRE");
+            case 5 -> null; //NOTE: (CASE 5) From U8G2 -> 3-wire hardware spi is NOT IMPLEMENTED
+            case 6 -> applyPrefix("I2C_SW");
+            case 7 -> applyPrefix("I2C_HW");
+            case 8 -> applyPrefix("SPI_SW_4WIRE_ST7920");
+            case 9 -> applyPrefix("SPI_HW_4WIRE_ST7920");
+            case 10 -> applyPrefix("I2C_HW_2ND");
+            case 11 -> applyPrefix("PARALLEL_6800_KS0108");
+            case 12 -> applyPrefix("SPI_HW_4WIRE_2ND");
+            case 13 -> applyPrefix("SED1520");
+            case 14 -> applyPrefix("SPI_HW_ST7920_2ND");
+            default -> throw new IllegalStateException("Unmapped comm interface index: " + index);
+        };
     }
 
     private String stripCodeComments(String code) {
@@ -171,9 +196,9 @@ public class CodeParser {
 
     private Vendor extractVendor(Controller controller, String vendorName) {
         return controller.getVendorList().stream()
-                .filter(p -> p.getName().equalsIgnoreCase(vendorName))
-                .findFirst()
-                .orElse(null);
+                         .filter(p -> p.getName().equalsIgnoreCase(vendorName))
+                         .findFirst()
+                         .orElse(null);
     }
 
     private String parseVendorName(String displayCode) {
