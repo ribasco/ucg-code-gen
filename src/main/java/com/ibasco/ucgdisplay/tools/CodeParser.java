@@ -1,7 +1,10 @@
 package com.ibasco.ucgdisplay.tools;
 
+import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdCommProtocol;
 import com.ibasco.ucgdisplay.tools.beans.*;
+
 import static com.ibasco.ucgdisplay.tools.util.StringUtils.sanitizeData;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,7 +120,7 @@ public class CodeParser {
             String pinsPlain = interfaceMatcher.group("pinsPlain");
             String pinsMdPlain = interfaceMatcher.group("pinsMdPlain");
             String genericComProc = interfaceMatcher.group("genericComProcedure");
-            String commProto = mapToCommProtocol(index);
+            GlcdCommProtocol commProto = mapToCommProtocol(index);
             var commInterface = new CommInterface(index++, commProto, name, setPinFunction, arduinoComProc, arduinoGpioProc, pinsWithType, pinsPlain, pinsMdPlain, genericComProc);
             interfaces.add(commInterface);
             log.info("[PARSE-INTERFACE] Parsed Comm Interface = {}", commInterface);
@@ -130,23 +133,23 @@ public class CodeParser {
         return String.format("%s.%s", "GlcdCommProtocol", value);
     }
 
-    private String mapToCommProtocol(int index) {
+    private GlcdCommProtocol mapToCommProtocol(int index) {
         return switch (index) {
-            case 0 -> applyPrefix("SPI_SW_4WIRE");
-            case 1 -> applyPrefix("SPI_HW_4WIRE");
-            case 2 -> applyPrefix("PARALLEL_6800");
-            case 3 -> applyPrefix("PARALLEL_8080");
-            case 4 -> applyPrefix("SPI_SW_3WIRE");
-            case 5 -> null; //NOTE: (CASE 5) From U8G2 -> 3-wire hardware spi is NOT IMPLEMENTED
-            case 6 -> applyPrefix("I2C_SW");
-            case 7 -> applyPrefix("I2C_HW");
-            case 8 -> applyPrefix("SPI_SW_4WIRE_ST7920");
-            case 9 -> applyPrefix("SPI_HW_4WIRE_ST7920");
-            case 10 -> applyPrefix("I2C_HW_2ND");
-            case 11 -> applyPrefix("PARALLEL_6800_KS0108");
-            case 12 -> applyPrefix("SPI_HW_4WIRE_2ND");
-            case 13 -> applyPrefix("SED1520");
-            case 14 -> applyPrefix("SPI_HW_ST7920_2ND");
+            case 0 -> GlcdCommProtocol.SPI_SW_4WIRE;
+            case 1 -> GlcdCommProtocol.SPI_HW_4WIRE;
+            case 2 -> GlcdCommProtocol.PARALLEL_6800;
+            case 3 -> GlcdCommProtocol.PARALLEL_8080;
+            case 4 -> GlcdCommProtocol.SPI_SW_3WIRE;
+            case 5 -> GlcdCommProtocol.SPI_HW_3WIRE; //NOTE: (CASE 5) From U8G2 -> 3-wire hardware spi is NOT IMPLEMENTED
+            case 6 -> GlcdCommProtocol.I2C_SW;
+            case 7 -> GlcdCommProtocol.I2C_HW;
+            case 8 -> GlcdCommProtocol.SPI_SW_4WIRE_ST7920;
+            case 9 -> GlcdCommProtocol.SPI_HW_4WIRE_ST7920;
+            case 10 -> GlcdCommProtocol.I2C_HW_2ND;
+            case 11 -> GlcdCommProtocol.PARALLEL_6800_KS0108;
+            case 12 -> GlcdCommProtocol.SPI_HW_4WIRE_2ND;
+            case 13 -> GlcdCommProtocol.SED1520;
+            case 14 -> GlcdCommProtocol.SPI_HW_ST7920_2ND;
             default -> throw new IllegalStateException("Unmapped comm interface index: " + index);
         };
     }
@@ -160,45 +163,25 @@ public class CodeParser {
     }
 
     private int getCommValue(String comm) {
-        switch (comm) {
-            case "COM_4WSPI": {
-                return 0x0001;
-            }
-            case "COM_3WSPI": {
-                return 0x0002;
-            }
-            case "COM_6800": {
-                return 0x0004;
-            }
-            case "COM_8080": {
-                return 0x0008;
-            }
-            case "COM_I2C": {
-                return 0x0010;
-            }
-            case "COM_ST7920SPI": {
-                return 0x0020;
-            }
-            case "COM_UART": {
-                return 0x0040;
-            }
-            case "COM_KS0108": {
-                return 0x0080;
-            }
-            case "COM_SED1520": {
-                return 0x0100;
-            }
-            default: {
-                return -1;
-            }
-        }
+        return switch (comm) {
+            case "COM_4WSPI" -> 0x0001;
+            case "COM_3WSPI" -> 0x0002;
+            case "COM_6800" -> 0x0004;
+            case "COM_8080" -> 0x0008;
+            case "COM_I2C" -> 0x0010;
+            case "COM_ST7920SPI" -> 0x0020;
+            case "COM_UART" -> 0x0040;
+            case "COM_KS0108" -> 0x0080;
+            case "COM_SED1520" -> 0x0100;
+            default -> -1;
+        };
     }
 
     private Vendor extractVendor(Controller controller, String vendorName) {
         return controller.getVendorList().stream()
-                         .filter(p -> p.getName().equalsIgnoreCase(vendorName))
-                         .findFirst()
-                         .orElse(null);
+                .filter(p -> p.getName().equalsIgnoreCase(vendorName))
+                .findFirst()
+                .orElse(null);
     }
 
     private String parseVendorName(String displayCode) {

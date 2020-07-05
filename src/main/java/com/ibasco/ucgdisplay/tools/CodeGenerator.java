@@ -8,13 +8,16 @@ import com.ibasco.ucgdisplay.drivers.glcd.GlcdInterfaceInfo;
 import com.ibasco.ucgdisplay.drivers.glcd.GlcdInterfaceLookup;
 import com.ibasco.ucgdisplay.drivers.glcd.GlcdSetupInfo;
 import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdBufferLayout;
+import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdCommProtocol;
 import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdController;
 import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdSize;
 import com.ibasco.ucgdisplay.tools.beans.*;
 import com.ibasco.ucgdisplay.tools.service.GithubService;
 import com.ibasco.ucgdisplay.tools.util.CodeBuilder;
 import com.ibasco.ucgdisplay.tools.util.StringUtils;
+
 import static com.ibasco.ucgdisplay.tools.util.StringUtils.formatVendorName;
+
 import com.squareup.javapoet.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,25 +83,26 @@ public class CodeGenerator {
         TypeName listOfInfoClass = ParameterizedTypeName.get(arrayList, commInfoClass);
 
         var fieldBuilder = FieldSpec.builder(listOfInfoClass, "interfaceList")
-                                    .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                                    .initializer("new $T<>()", arrayList);
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("new $T<>()", arrayList);
 
         //add field
         classBuilder.addField(fieldBuilder.build());
 
         for (CommInterface commInt : interfaces) {
-            staticBlockBuilder.addStatement("interfaceList.add(new $T($L, $L, $S, $S, $S, $S, $S, $S, $S, $S))",
-                                            GlcdInterfaceInfo.class,
-                                            commInt.index(),
-                                            commInt.protocol(),
-                                            commInt.name(),
-                                            commInt.setPinFunction(),
-                                            commInt.arduinoComProcedure(),
-                                            commInt.arduinoGpioProcedure(),
-                                            commInt.pinsWithType(),
-                                            commInt.pinsPlain(),
-                                            commInt.pinsMarkdown(),
-                                            commInt.genericComProcedure());
+            staticBlockBuilder.addStatement("interfaceList.add(new $T($L, $T.$L, $S, $S, $S, $S, $S, $S, $S, $S))",
+                    GlcdInterfaceInfo.class,
+                    commInt.index(),
+                    GlcdCommProtocol.class,
+                    commInt.protocol().name(),
+                    commInt.name(),
+                    commInt.setPinFunction(),
+                    commInt.arduinoComProcedure(),
+                    commInt.arduinoGpioProcedure(),
+                    commInt.pinsWithType(),
+                    commInt.pinsPlain(),
+                    commInt.pinsMarkdown(),
+                    commInt.genericComProcedure());
         }
 
         //add static block
@@ -106,10 +110,10 @@ public class CodeGenerator {
 
         //add method
         classBuilder.addMethod(MethodSpec.methodBuilder("getInfoList")
-                                         .addStatement("return $T.interfaceList", GlcdInterfaceLookup.class)
-                                         .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                                         .returns(listOfInfoClass)
-                                         .build()
+                .addStatement("return $T.interfaceList", GlcdInterfaceLookup.class)
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(listOfInfoClass)
+                .build()
         );
 
         JavaFile.Builder javaBuilder = JavaFile.builder("com.ibasco.ucgdisplay.drivers.glcd", classBuilder.build());
@@ -152,7 +156,22 @@ public class CodeGenerator {
     }
 
     private boolean isExcluded(Controller controller, List<String> excludedControllers) {
-        return excludedControllers.stream().anyMatch(p -> p.equalsIgnoreCase(controller.getName().trim()));
+        return excludedControllers.stream().anyMatch(exclusionString -> exclusionString.equalsIgnoreCase(controller.getName().trim()));
+    }
+
+    private boolean isExcludedVendor(Controller controller, String setupName, List<String> exclusions) {
+        return exclusions.stream().anyMatch(exclusionString -> {
+            if (exclusionString.contains("=")) {
+                String[] tokens = exclusionString.split("=");
+                if (tokens.length == 2 && !tokens[0].isBlank() && !tokens[1].isBlank()) {
+                    //token 0 = controller name
+                    //token 1 = setup name (optional)
+                    var controllerName = controller.getName().trim();
+                    return controllerName.equalsIgnoreCase(tokens[0].trim()) && setupName.equalsIgnoreCase(tokens[1]);
+                }
+            }
+            return false;
+        });
     }
 
     public JavaFile generateGlcdCode(List<Controller> controllers, List<String> excludedControllers) {
@@ -171,12 +190,12 @@ public class CodeGenerator {
 
                 FieldSpec.Builder displayFieldBuilder = FieldSpec.builder(GlcdDisplay.class, vendorName, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL);
                 displayFieldBuilder.addJavadoc("<p>\nDisplay Name:\n    $L :: $L\n</p>\n<p>\nDisplay Width:\n    $L pixels\n</p>\n<p>\nDisplay height:\n    $L pixels\n</p>\nSupported Bus Interfaces: \n<ul>$L</ul>\n<p>\nNotes from author:\n    $L\n</p>\n",
-                                               controller.getName(),
-                                               vendor.getName(),
-                                               vendor.getTileWidth() * 8,
-                                               vendor.getTileHeight() * 8,
-                                               getSupportedCommProtocols(vendor),
-                                               !StringUtils.isBlank(vendor.getNotes()) ? vendor.getNotes() : "N/A"
+                        controller.getName(),
+                        vendor.getName(),
+                        vendor.getTileWidth() * 8,
+                        vendor.getTileHeight() * 8,
+                        getSupportedCommProtocols(vendor),
+                        !StringUtils.isBlank(vendor.getNotes()) ? vendor.getNotes() : "N/A"
                 );
 
                 String bufferLayout;
@@ -189,12 +208,12 @@ public class CodeGenerator {
                 }
 
                 CodeBlock.Builder displayCodeBlockBuilder = CodeBlock.builder()
-                                                                     .add("new $T(", GlcdDisplay.class)
-                                                                     .add("\n    $T.$L,", GlcdController.class, controller.getName())
-                                                                     .add("\n    ").add("$S,", vendorName)
-                                                                     .add("\n    ").add("$L,", vendor.getTileWidth())
-                                                                     .add("\n    ").add("$L,", vendor.getTileHeight())
-                                                                     .add("\n    ").add("$T.$L,", GlcdBufferLayout.class, bufferLayout);
+                        .add("new $T(", GlcdDisplay.class)
+                        .add("\n    $T.$L,", GlcdController.class, controller.getName())
+                        .add("\n    ").add("$S,", vendorName)
+                        .add("\n    ").add("$L,", vendor.getTileWidth())
+                        .add("\n    ").add("$L,", vendor.getTileHeight())
+                        .add("\n    ").add("$T.$L,", GlcdBufferLayout.class, bufferLayout);
 
                 CodeBlock.Builder setupCodeBlock = CodeBlock.builder();
 
@@ -235,52 +254,52 @@ public class CodeGenerator {
         TypeSpec.Builder enumSpec = TypeSpec.enumBuilder("GlcdSize").addModifiers(Modifier.PUBLIC);
         enumSpec.addMethod(
                 MethodSpec.constructorBuilder()
-                          .addParameter(TypeName.INT, "tileWidth")
-                          .addParameter(TypeName.INT, "tileHeight")
-                          .addStatement("this.tileWidth = tileWidth")
-                          .addStatement("this.tileHeight = tileHeight")
-                          .build()
+                        .addParameter(TypeName.INT, "tileWidth")
+                        .addParameter(TypeName.INT, "tileHeight")
+                        .addStatement("this.tileWidth = tileWidth")
+                        .addStatement("this.tileHeight = tileHeight")
+                        .build()
         );
         enumSpec.addField(TypeName.INT, "tileWidth", Modifier.PRIVATE);
         enumSpec.addField(TypeName.INT, "tileHeight", Modifier.PRIVATE);
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("getDisplayWidth")
-                          .addStatement("return tileWidth * 8")
-                          .addModifiers(Modifier.PUBLIC)
-                          .returns(TypeName.INT)
-                          .build()
+                        .addStatement("return tileWidth * 8")
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(TypeName.INT)
+                        .build()
         );
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("getDisplayHeight")
-                          .addStatement("return tileHeight * 8", Modifier.PUBLIC)
-                          .addModifiers(Modifier.PUBLIC)
-                          .returns(TypeName.INT)
-                          .build()
+                        .addStatement("return tileHeight * 8", Modifier.PUBLIC)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(TypeName.INT)
+                        .build()
         );
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("getTileWidth")
-                          .addStatement("return tileWidth", Modifier.PUBLIC)
-                          .addModifiers(Modifier.PUBLIC)
-                          .returns(TypeName.INT)
-                          .build()
+                        .addStatement("return tileWidth", Modifier.PUBLIC)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(TypeName.INT)
+                        .build()
         );
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("getTileHeight")
-                          .addStatement("return tileHeight", Modifier.PUBLIC)
-                          .addModifiers(Modifier.PUBLIC)
-                          .returns(TypeName.INT)
-                          .build()
+                        .addStatement("return tileHeight", Modifier.PUBLIC)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(TypeName.INT)
+                        .build()
         );
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("get")
-                          .returns(GlcdSize.class)
-                          .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                          .addParameter(TypeName.INT, "tileWidth")
-                          .addParameter(TypeName.INT, "tileHeight")
-                          .addStatement("return $T.stream(GlcdSize.values())\n" +
-                                                "                .filter(p -> (p.getTileWidth() == tileWidth) && (p.getTileHeight() == tileHeight))\n" +
-                                                "                .findFirst().orElse(null)", Arrays.class)
-                          .build()
+                        .returns(GlcdSize.class)
+                        .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                        .addParameter(TypeName.INT, "tileWidth")
+                        .addParameter(TypeName.INT, "tileHeight")
+                        .addStatement("return $T.stream(GlcdSize.values())\n" +
+                                "                .filter(p -> (p.getTileWidth() == tileWidth) && (p.getTileHeight() == tileHeight))\n" +
+                                "                .findFirst().orElse(null)", Arrays.class)
+                        .build()
         );
         for (Controller controller : controllers) {
             for (Vendor vendor : controller.getVendorList()) {
@@ -304,43 +323,43 @@ public class CodeGenerator {
         enumSpec.addField(Integer.class, "glyphTotal", Modifier.PRIVATE);
 
         enumSpec.addMethod(MethodSpec.constructorBuilder()
-                                     .addParameter(TypeName.get(String.class), "fontKey")
-                                     .addParameter(TypeName.INT, "glyphCount")
-                                     .addParameter(TypeName.INT, "glyphTotal")
-                                     .addParameter(TypeName.get(String.class), "fontDescription")
-                                     .addStatement("this.fontKey = fontKey")
-                                     .addStatement("this.glyphCount = glyphCount")
-                                     .addStatement("this.glyphTotal = glyphTotal")
-                                     .addStatement("this.fontDescription = fontDescription")
-                                     .build());
+                .addParameter(TypeName.get(String.class), "fontKey")
+                .addParameter(TypeName.INT, "glyphCount")
+                .addParameter(TypeName.INT, "glyphTotal")
+                .addParameter(TypeName.get(String.class), "fontDescription")
+                .addStatement("this.fontKey = fontKey")
+                .addStatement("this.glyphCount = glyphCount")
+                .addStatement("this.glyphTotal = glyphTotal")
+                .addStatement("this.fontDescription = fontDescription")
+                .build());
 
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("getKey")
-                          .addModifiers(Modifier.PUBLIC)
-                          .returns(String.class)
-                          .addStatement("return fontKey")
-                          .build()
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(String.class)
+                        .addStatement("return fontKey")
+                        .build()
         );
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("getGlyphCount")
-                          .addModifiers(Modifier.PUBLIC)
-                          .returns(TypeName.INT)
-                          .addStatement("return glyphCount")
-                          .build()
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(TypeName.INT)
+                        .addStatement("return glyphCount")
+                        .build()
         );
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("getGlyphTotal")
-                          .addModifiers(Modifier.PUBLIC)
-                          .returns(TypeName.INT)
-                          .addStatement("return glyphTotal")
-                          .build()
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(TypeName.INT)
+                        .addStatement("return glyphTotal")
+                        .build()
         );
         enumSpec.addMethod(
                 MethodSpec.methodBuilder("getDescription")
-                          .addModifiers(Modifier.PUBLIC)
-                          .returns(String.class)
-                          .addStatement("return fontDescription")
-                          .build()
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(String.class)
+                        .addStatement("return fontDescription")
+                        .build()
         );
 
         var fonts = extractor.extractFontFilesFromZip(GithubService.REPO_OWNER);
@@ -407,6 +426,10 @@ public class CodeGenerator {
             for (var vendor : controller.getVendorList()) {
                 for (VendorConfig config : vendor.getVendorConfigs()) {
                     String name = StringUtils.toU8g2SetupName(config);
+                    if (isExcludedVendor(controller, name, excludedControllers)) {
+                        log.warn("generateSetupLookupTableCpp(): Excluded vendor entry '{}' from controller '{}'", name, controller.getName());
+                        continue;
+                    }
                     code.appendTabbedLine("setup_map[\"%s\"] = %s;", name, name);
                 }
             }
@@ -435,14 +458,14 @@ public class CodeGenerator {
         code.appendLine();
 
         code.appendLine("ExternalProject_Add(\n" +
-                                "        project_u8g2\n" +
-                                "        GIT_REPOSITORY \"https://github.com/ribasco/u8g2.git\"\n" +
-                                "        GIT_TAG \"master\"\n" +
-                                "        PREFIX ${PROJ_PREFIX}\n" +
-                                "        INSTALL_COMMAND \"\"\n" +
-                                "        CONFIGURE_COMMAND \"\"\n" +
-                                "        BUILD_COMMAND \"\"\n" +
-                                ")");
+                "        project_u8g2\n" +
+                "        GIT_REPOSITORY \"https://github.com/ribasco/u8g2.git\"\n" +
+                "        GIT_TAG \"master\"\n" +
+                "        PREFIX ${PROJ_PREFIX}\n" +
+                "        INSTALL_COMMAND \"\"\n" +
+                "        CONFIGURE_COMMAND \"\"\n" +
+                "        BUILD_COMMAND \"\"\n" +
+                ")");
         code.appendLine();
 
         code.appendLine("ExternalProject_Get_Property(project_u8g2 SOURCE_DIR INSTALL_DIR)");
@@ -484,10 +507,10 @@ public class CodeGenerator {
         //Add getter method
         enumBuilder.addMethod(
                 MethodSpec.methodBuilder(methodName)
-                          .addModifiers(Modifier.PUBLIC)
-                          .returns(type)
-                          .addStatement("return " + field)
-                          .build()
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(type)
+                        .addStatement("return " + field)
+                        .build()
         );
     }
 
@@ -520,9 +543,9 @@ public class CodeGenerator {
             if (StringUtils.isBlank(lastU8g2Branch) || !lastU8g2Branch.equals(branchName) || u8g2FileCache.isEmpty()) {
                 List<GithubTreeNode> files = githubService.getNodesFromTree("csrc/", branchName);
                 u8g2FileCache = files.stream()
-                                     .filter(p -> p.getPath().endsWith(".c") || p.getPath().endsWith(".h"))
-                                     .map(m -> Paths.get(m.getPath()).getFileName().toString())
-                                     .collect(Collectors.toList());
+                        .filter(p -> p.getPath().endsWith(".c") || p.getPath().endsWith(".h"))
+                        .map(m -> Paths.get(m.getPath()).getFileName().toString())
+                        .collect(Collectors.toList());
                 lastU8g2Branch = branchName;
             }
         } catch (IOException e) {
@@ -538,11 +561,11 @@ public class CodeGenerator {
             if (StringUtils.isBlank(lastFontBranch) || !lastFontBranch.equals(branchName) || fontCache.isEmpty()) {
                 List<GithubTreeNode> files = githubService.getNodesFromTree("tools/font/build/single_font_files", branchName);
                 fontCache = files.stream()
-                                 .filter(p -> p.getPath().endsWith(".c"))
-                                 .map(m -> Paths.get(m.getPath()).getFileName().toString())
-                                 .filter(name -> name.startsWith("u8g2_"))
-                                 .map(n -> n.replace(".c", ""))
-                                 .collect(Collectors.toList());
+                        .filter(p -> p.getPath().endsWith(".c"))
+                        .map(m -> Paths.get(m.getPath()).getFileName().toString())
+                        .filter(name -> name.startsWith("u8g2_"))
+                        .map(n -> n.replace(".c", ""))
+                        .collect(Collectors.toList());
                 lastFontBranch = branchName;
             }
         } catch (IOException e) {

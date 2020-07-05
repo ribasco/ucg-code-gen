@@ -213,13 +213,13 @@ public class Application {
 
     private List<String> getExclusions(Path path, String defaultResource) throws FileNotFoundException {
         ArrayList<String> output = new ArrayList<>();
-        InputStream fontExclusions;
+        InputStream exclusionResource;
         if (path == null) {
-            fontExclusions = getClass().getResourceAsStream(defaultResource);
+            exclusionResource = getClass().getResourceAsStream(defaultResource);
         } else {
-            fontExclusions = new FileInputStream(fontExclusionFilePath.toFile());
+            exclusionResource = new FileInputStream(path.toFile());
         }
-        processResourceStream(fontExclusions, output);
+        processResourceStream(exclusionResource, output);
         return output;
     }
 

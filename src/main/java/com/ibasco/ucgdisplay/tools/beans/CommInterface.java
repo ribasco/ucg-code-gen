@@ -1,6 +1,8 @@
 package com.ibasco.ucgdisplay.tools.beans;
 
-public record CommInterface(int index, String protocol, String name, String setPinFunction, String arduinoComProcedure,
+import com.ibasco.ucgdisplay.drivers.glcd.enums.GlcdCommProtocol;
+
+public record CommInterface(int index, GlcdCommProtocol protocol, String name, String setPinFunction, String arduinoComProcedure,
                             String arduinoGpioProcedure, String pinsWithType, String pinsPlain,
                             String pinsMarkdown, String genericComProcedure) {
 
