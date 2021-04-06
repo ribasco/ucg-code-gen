@@ -58,9 +58,9 @@ public class CodeGenerator {
 
     private boolean includeComments;
 
-    private DateTimeFormatter dateTimeFormatter = DateTimeFormatter.RFC_1123_DATE_TIME;
+    private final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.RFC_1123_DATE_TIME;
 
-    private CodeExtractor extractor;
+    private final CodeExtractor extractor;
 
     public CodeGenerator(CodeExtractor extractor) {
         this.extractor = extractor;

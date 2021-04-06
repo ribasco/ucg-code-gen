@@ -2,9 +2,9 @@ package com.ibasco.ucgdisplay.tools.util;
 
 public class CodeBuilder {
 
-    private StringBuilder builder = new StringBuilder();
+    private final StringBuilder builder = new StringBuilder();
 
-    private String lineSeparator = System.lineSeparator();
+    private final String lineSeparator = System.lineSeparator();
 
     private boolean useUnixStyleSeparator;
 
