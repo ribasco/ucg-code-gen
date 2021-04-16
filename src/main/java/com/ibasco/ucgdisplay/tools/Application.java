@@ -140,8 +140,8 @@ public class Application {
         var excludedFonts = getExclusions(fontExclusionFilePath, "/excludedFonts.properties");
         var excludedControllers = getExclusions(controllerExclusionFilePath, "/excludedControllers.properties");
 
-        log.info("Added {} font exclusions", excludedFonts.size());
-        log.info("Added {} controller exclusions", excludedControllers.size());
+        log.info("[RUN] Added {} font exclusions", excludedFonts.size());
+        log.info("[RUN] Added {} controller exclusions", excludedControllers.size());
 
         final JavaFile glcdFile = generator.generateGlcdCode(controllers, excludedControllers);
         final JavaFile glcdControllerTypes = generator.generateControllerTypeEnum(controllers);
@@ -190,22 +190,22 @@ public class Application {
             var exportInterfaceLookup = Paths.get(projectPath.toString(), "drivers/glcd/src/main/java/com/ibasco/ucgdisplay/drivers/glcd/GlcdInterfaceLookup.java");
 
             //Copy to project path
-            exportToDest(tmpGlcdPath, exportPathGlcd);
-            exportToDest(tmpGlcdControllerTypePath, exportPathGlcdControllerType);
-            exportToDest(tmpGlcdSizePath, exportPathGlcdSize);
-            exportToDest(tmpGlcdFontEnumPath, exportPathGlcdFont);
-            exportToDest(tmpU8g2LookupFontPath, exportPathU8g2LookupFontPath);
-            exportToDest(tmpU8g2LookupSetupPath, exportPathU8g2LookupSetupPath);
-            exportToDest(tmpU8g2CmakeFilePath, exportPathU8g2CmakeFilePath);
-            exportToDest(tmpGlcdInterfaceLookupPath, exportInterfaceLookup);
+            export(tmpGlcdPath, exportPathGlcd);
+            export(tmpGlcdControllerTypePath, exportPathGlcdControllerType);
+            export(tmpGlcdSizePath, exportPathGlcdSize);
+            export(tmpGlcdFontEnumPath, exportPathGlcdFont);
+            export(tmpU8g2LookupFontPath, exportPathU8g2LookupFontPath);
+            export(tmpU8g2LookupSetupPath, exportPathU8g2LookupSetupPath);
+            export(tmpU8g2CmakeFilePath, exportPathU8g2CmakeFilePath);
+            export(tmpGlcdInterfaceLookupPath, exportInterfaceLookup);
 
             //Create manifest
-            log.info("Creating manifest file at '{}'", tmpControllerManifest);
+            log.info("[RUN] Creating manifest file at '{}'", tmpControllerManifest);
             String manifestJson = generator.generateManifest(controllers);
             exportCodeToFile(tmpControllerManifest, manifestJson);
-            exportToDest(tmpControllerManifest, exportPathManifest);
+            export(tmpControllerManifest, exportPathManifest);
         } finally {
-            log.info("Cleaning up resources");
+            log.info("[RUN] Cleaning up resources");
             //Cleanup
             recursiveDeleteOnExit(tempDirWithPrefix);
         }
@@ -232,7 +232,7 @@ public class Application {
         }
     }
 
-    private void exportToDest(Path source, Path dest) throws IOException {
+    private void export(Path source, Path dest) throws IOException {
         if (testMode) {
             if (!Files.isWritable(dest))
                 throw new IllegalStateException(String.format("File '%s' will not be able to replace '%s'. No write permission", source, dest));
@@ -243,17 +243,17 @@ public class Application {
             }
         } else {
             Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING);
-            log.info("File \"{}\" exported to project path \"{}\"", source.getFileName(), dest.toString());
+            log.info("[EXPORT] File \"{}\" exported to project path \"{}\"", source.getFileName(), dest.toString());
         }
     }
 
     private void exportCodeToFile(Path filePath, String code) throws IOException {
         Files.writeString(filePath, code);
-        log.info("File(s) saved to \"{}\"", filePath.toString());
+        log.info("[EXPORT] File(s) saved to \"{}\"", filePath.toString());
     }
 
     public static void recursiveDeleteOnExit(Path path) throws IOException {
-        Files.walkFileTree(path, new SimpleFileVisitor<Path>() {
+        Files.walkFileTree(path, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult visitFile(Path file, @SuppressWarnings("unused") BasicFileAttributes attrs) {
                 file.toFile().deleteOnExit();

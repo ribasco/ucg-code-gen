@@ -16,7 +16,7 @@ public class Vendor {
 
     private String notes;
 
-    private List<VendorConfig> vendorConfigs = new ArrayList<>();
+    private final List<VendorConfig> vendorConfigs = new ArrayList<>();
 
     public Vendor(Controller controller, String name) {
         this.controller = controller;

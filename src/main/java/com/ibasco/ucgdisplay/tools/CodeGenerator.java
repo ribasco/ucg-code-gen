@@ -397,7 +397,7 @@ public class CodeGenerator {
         code.appendTabbedLine("font_map.clear();");
         for (String fontName : fonts) {
             if (exclusions.contains(fontName)) {
-                log.warn("generateFontLookupTableCpp : Excluded font: {}", fontName);
+                log.warn("[EXCLUDE FONT] Excluded font: {}", fontName);
                 code.appendTabbedLine("//Excluded: font_map[\"%s\"] = %s;", fontName, fontName);
                 continue;
             }
@@ -420,7 +420,7 @@ public class CodeGenerator {
         code.appendTabbedLine("setup_map.clear();");
         for (var controller : controllers) {
             if (isExcluded(controller, excludedControllers)) {
-                log.warn("generateSetupLookupTableCpp(): Excluded controller: {}", controller.getName());
+                log.warn("[EXCLUDE CONTROLLER] Excluded controller: {}", controller.getName());
                 continue;
             }
             for (var vendor : controller.getVendorList()) {
